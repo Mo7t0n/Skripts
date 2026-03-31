@@ -3,6 +3,7 @@ import glob
 import re
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider, Button
 
 # Ein-/Ausgabe
 INPUT_PATH_OR_DIR = r"C:\Users\admin\source\repos\S3_DeformFDM_2\DataSet\TOOL_PATH"            # Datei ODER Ordner
@@ -12,6 +13,7 @@ INPUT_ORDER       = "x z y i k j"      # Reihenfolge der 6 Spalten IN DER DATEI
 # Visualisierung
 PLOT_AXES         = "x y z"            # Reihenfolge der Raumachsen im Plot (nur x/y/z)
 COLOR_BY_FILE     = True               # True → pro Datei eigene Farbe/Legende
+PLOT_SLIDER       = True               # True → mit Slider (Dateiweise einblenden)
 
 # Vektoren (A,B,C als Richtungspfeile anzeigen)
 DRAW_VECTORS      = False
@@ -292,14 +294,97 @@ axes = _parse_order(PLOT_AXES, expected_len=3, allow_subset=True)
 idx_map = {n: i for i, n in enumerate(VALID_NAMES)}
 i0, i1, i2 = (idx_map[axes[0]], idx_map[axes[1]], idx_map[axes[2]])
 
-fig = plt.figure(figsize=(10, 10))
+fig = plt.figure(figsize=(10, 11))
 ax = fig.add_subplot(111, projection='3d')
 if COLOR_BY_FILE and len(meta["files"]) > 1:
-    for layer_idx, (fp, sl) in enumerate(meta["segments"]):
-        ax.plot(
-            data_std[sl, i0], data_std[sl, i1], data_std[sl, i2],
-            marker=".", linewidth=0.3, markersize=0.8, alpha=0.8
-        )
+    if PLOT_SLIDER:
+        lines = []
+        for layer_idx, (fp, sl) in enumerate(meta["segments"]):
+            ln, = ax.plot(
+                data_std[sl, i0], data_std[sl, i1], data_std[sl, i2],
+                marker=".", linewidth=1.0, markersize=2.0, alpha=0.8, visible=False
+            )
+            lines.append(ln)
+
+        # Anfangszustand: erste Datei sichtbar
+        if lines:
+            lines[0].set_visible(True)
+
+        # State für Vektoren
+        state = {'show_vectors': False, 'quiver_objs': [], 'ijk_all_up': None}
+        if set(axes).issubset({"x","y","z"}):
+            state['ijk_all_up'] = _force_upward(data_std[:, 3:6])
+
+        slider_ax = fig.add_axes([0.15, 0.03, 0.7, 0.03])
+        file_slider = Slider(slider_ax, 'Datei', 1, len(lines), valinit=1, valstep=1)
+        
+        button_ax = fig.add_axes([0.82, 0.08, 0.15, 0.03])
+        vectors_button = Button(button_ax, 'Vektoren AN')
+
+        def slider_update(val):
+            idx = int(val) - 1
+            for j, ln in enumerate(lines):
+                ln.set_visible(j <= idx)
+            
+            # Vektoren aktualisieren wenn aktiviert
+            if state['show_vectors'] and set(axes).issubset({"x","y","z"}):
+                # Alte Vektoren löschen
+                for qobj in state['quiver_objs']:
+                    qobj.remove()
+                state['quiver_objs'].clear()
+                
+                # Zeichne Vektoren pro Schicht mit entsprechender Farbe
+                for j in range(idx + 1):
+                    sl = meta["segments"][j][1]
+                    indices = np.arange(sl.start, sl.stop)
+                    idx_vec = indices[::max(1, int(VECTOR_EVERY))]
+                    
+                    if len(idx_vec) == 0:
+                        continue
+                    
+                    X = data_std[idx_vec, i0]
+                    Y = data_std[idx_vec, i1]
+                    Z = data_std[idx_vec, i2]
+                    U = state['ijk_all_up'][idx_vec, 0]
+                    Vv = state['ijk_all_up'][idx_vec, 1]
+                    W = state['ijk_all_up'][idx_vec, 2]
+                    
+                    norms = np.linalg.norm(np.column_stack([U, Vv, W]), axis=1, keepdims=True)
+                    norms = np.where(norms == 0, 1.0, norms)
+                    U, Vv, W = U/norms[:,0], Vv/norms[:,0], W/norms[:,0]
+                    
+                    color = lines[j].get_color()
+                    if VECTOR_NORMALIZE:
+                        qobj = ax.quiver(X, Y, Z, U, Vv, W, length=VECTOR_SCALE*1.5, normalize=True,
+                                  arrow_length_ratio=ARROW_LENGTH_RATIO, linewidths=1.0, color=color)
+                    else:
+                        qobj = ax.quiver(X, Y, Z, VECTOR_SCALE*1.5*U, VECTOR_SCALE*1.5*Vv, VECTOR_SCALE*1.5*W,
+                                  length=1.0, normalize=False,
+                                  arrow_length_ratio=ARROW_LENGTH_RATIO, linewidths=1.0, color=color)
+                    state['quiver_objs'].append(qobj)
+            elif not state['show_vectors']:
+                # Alle Vektoren entfernen
+                for qobj in state['quiver_objs']:
+                    qobj.remove()
+                state['quiver_objs'].clear()
+            
+            ax.set_title(f"Visualisierung Trajektorie ({idx+1}/{len(lines)})")
+            fig.canvas.draw_idle()
+        
+        def toggle_vectors(event):
+            state['show_vectors'] = not state['show_vectors']
+            vectors_button.label.set_text('Vektoren AUS' if state['show_vectors'] else 'Vektoren AN')
+            slider_update(file_slider.val)
+        
+        vectors_button.on_clicked(toggle_vectors)
+        file_slider.on_changed(slider_update)
+
+    else:
+        for layer_idx, (fp, sl) in enumerate(meta["segments"]):
+            ax.plot(
+                data_std[sl, i0], data_std[sl, i1], data_std[sl, i2],
+                marker=".", linewidth=0.3, markersize=0.8, alpha=0.8
+            )
 else:
     ax.plot(
         data_std[:, i0], data_std[:, i1], data_std[:, i2],

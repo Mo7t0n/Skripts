@@ -14,8 +14,8 @@ INPUT_PATH = 'output_trajektorie/Kegel_v3.txt'
 OUTPUT_PATH = 'output_geo_code/Kegel_v3.geo'
 
 # Maximale erlaubte Rotationen
-MAX_ROT_X = 15.0
-MAX_ROT_Y = 15.0
+MAX_ROT_X = 13.0
+MAX_ROT_Y = 13.0
 MAX_ROT_Z = 45.0
 
 # Offset des Rotationszentrums
@@ -72,13 +72,13 @@ def compute_platform_pose(x, y, z, a, b, c, bed_offset_xyz=(-3.13421237, -9.7443
     bed_offset = np.array(bed_offset_xyz)
     nozzle_offset = np.array(nozzle_offset_xyz)
 
-    tool_tip = np.array([x, y, z]) - nozzle_offset
+    tool_tip = np.array([x, y, z])
 
     R = Rotation.from_euler('ZYX', [c, b, a], degrees=True)
 
     rot_center = tool_tip - bed_offset
     rotated_offset = R.apply(bed_offset)
-    new_nozzle_pos = rot_center + rotated_offset
+    new_nozzle_pos = rot_center + rotated_offset - nozzle_offset
 
     T_nozzle = np.eye(4)
     T_nozzle[:3, :3] = R.as_matrix()

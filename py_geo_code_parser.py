@@ -14,9 +14,9 @@ INPUT_PATH = 'output_trajektorie/Kegel_v3.txt'
 OUTPUT_PATH = 'output_geo_code/Kegel_v3_space.geo'
 
 # Maximale erlaubte Rotationen
-MAX_ROT_X = 13.0
-MAX_ROT_Y = 13.0
-MAX_ROT_Z = 45.0
+MAX_ROT_X = 25.0
+MAX_ROT_Y = 25.0
+MAX_ROT_Z = 15.0
 
 # Offset des Rotationszentrums
 BED_OFFSET_X = 24.01192936
@@ -26,7 +26,7 @@ BED_OFFSET_Z = 184.52700323
 # Offset für Extruder-Position
 TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
-TEST_OFFSET_Z = 200
+TEST_OFFSET_Z = -100
 
 def strip_comments(line):
     return line.split(';')[0].strip()
@@ -98,7 +98,7 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
     Wandelt Eingabe-Zeilen in Bewegungsbefehle um.
     Berechnet Plattformpositionen und begrenzt Rotationen.
     """
-    custom_code = ['LA 0.0 0.0 0.0 0.0 0.0 0.0']  # Startpose
+    custom_code = ['LA 0.0 0.0 -100.0 0.0 0.0 0.0']  # Startpose
     custom_ende_code = ''
     last_speed = None
     speed_mode_set = False

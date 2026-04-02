@@ -1,5 +1,6 @@
 import numpy as np
 import csv
+import os
 from scipy.spatial.transform import Rotation as R
 
 
@@ -47,7 +48,10 @@ def parse_float(value):
 offsets = []
 
 # CSV-Datei einlesen
-with open("BedOffset_2.CSV", newline="", encoding="utf-8") as csvfile:
+script_dir = os.path.dirname(os.path.abspath(__file__))
+csv_file = os.path.join(script_dir, "BedOffset_2.CSV")
+
+with open(csv_file, newline="", encoding="utf-8") as csvfile:
     reader = csv.DictReader(csvfile, delimiter=";")
     for row in reader:
         # Eingabe: Düsenpose (commanded)

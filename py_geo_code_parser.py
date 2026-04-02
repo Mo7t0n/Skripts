@@ -19,13 +19,13 @@ MAX_ROT_Y = 13.0
 MAX_ROT_Z = 45.0
 
 # Offset des Rotationszentrums
-BED_OFFSET_X = -3.13421237      #-5.25
-BED_OFFSET_Y = -9.74438965      #-28.90
-BED_OFFSET_Z = - 178.13481531   #-173.02
+BED_OFFSET_X = -161.51839367
+BED_OFFSET_Y = 172.31083016
+BED_OFFSET_Z = 263.50965504
 
 # Offset für Extruder-Position (falls nicht bei 0,0,0)
-NOZZLE_OFFSET_X = 10.0
-NOZZLE_OFFSET_Y = -1.5
+NOZZLE_OFFSET_X = 8.8
+NOZZLE_OFFSET_Y = -1.6
 NOZZLE_OFFSET_Z = 55.0
 
 def strip_comments(line):

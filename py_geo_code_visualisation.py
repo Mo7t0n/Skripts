@@ -2,22 +2,81 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
+from scipy.spatial.transform import Rotation
 import warnings
 warnings.filterwarnings('ignore')
 
+# Standard-Offsets aus py_geo_code_parser.py
+DEFAULT_BED_OFFSET  = (24.01192936, -23.95110169, 184.52700323)
+DEFAULT_TEST_OFFSET = (0.0, 0.0, 0.0)
+
 
 class GeoCodeVisualizer:
-    """Visualisiert Geo-Code Dateien mit Extruder-Status und Liniendicke"""
+    """Visualisiert Geo-Code Dateien mit Extruder-Status und Liniendicke."""
     
-    def __init__(self, filepath: str):
+    def __init__(self, filepath: str,
+                 as_toolpath: bool = False,
+                 bed_offset: Tuple = DEFAULT_BED_OFFSET,
+                 test_offset: Tuple = DEFAULT_TEST_OFFSET):
+        """
+        :param filepath: Pfad zur .geo Datei
+        :param as_toolpath: True  → Koordinaten per Umkehrtransformation in
+                                    Werkzeugbahn-Raum (Düsenposition) umrechnen
+                            False → Plattform-Pose direkt visualisieren
+        :param bed_offset:   Offset Rotationszentrum-Düse (aus geo_code_parser)
+        :param test_offset:  Extruder-Offset (aus geo_code_parser)
+        """
         self.filepath = Path(filepath)
         self.commands = []
         self.extruder_state = False
+        self.as_toolpath = as_toolpath
+        self.bed_offset = np.array(bed_offset)
+        self.test_offset = np.array(test_offset)
         self.parse_file()
     
+    @staticmethod
+    def compute_toolpath_pose(px: float, py: float, pz: float,
+                              pa: float, pb: float, pc: float,
+                              bed_offset: np.ndarray,
+                              test_offset: np.ndarray) -> Tuple:
+        """
+        Umkehrung von compute_platform_pose aus py_geo_code_parser.py.
+
+        Im geo-File gespeicherte Plattform-Pose:
+          pa = euler[2] (X-Achse), pb = euler[1] (Y), pc = euler[0] (Z)
+          → Rotation.from_euler('ZYX', [pc, pb, pa])
+
+        Vorwärts-Transformation war:
+          T_nozzle  = [R_nozzle | new_nozzle_pos]
+          T_platform = inv(T_nozzle)
+
+        Rückwärts:
+          T_nozzle = inv(T_platform)
+          new_nozzle_pos = -R_plat^T @ [px,py,pz]
+          tool_tip = new_nozzle_pos + bed_offset
+                     - R_nozzle.apply(bed_offset) + test_offset
+        """
+        # Plattform-Rotation aus gespeicherten Euler-Winkeln (ZYX: [pc, pb, pa])
+        R_plat = Rotation.from_euler('ZYX', [pc, pb, pa], degrees=True)
+
+        # T_nozzle = inv(T_platform)  →  R_nozzle = R_plat^-1,  t_nozzle = -R_plat^T @ t_platform
+        R_nozzle = R_plat.inv()
+        new_nozzle_pos = -(R_plat.as_matrix().T @ np.array([px, py, pz]))
+
+        # Werkzeugspitze zurückrechnen
+        tool_tip = new_nozzle_pos + bed_offset - R_nozzle.apply(bed_offset) + test_offset
+
+        # Winkel der Düse zurückrechnen: R = from_euler('ZYX', [c, b, a])
+        euler = R_nozzle.as_euler('ZYX', degrees=True)  # [Z, Y, X]
+        c_ang = euler[0]
+        b_ang = euler[1]
+        a_ang = euler[2]
+
+        return tool_tip[0], tool_tip[1], tool_tip[2], a_ang, b_ang, c_ang
+
     def parse_file(self):
-        """Parst die Geo-Code Datei"""
+        """Parst die Geo-Code Datei und wendet ggf. Umkehrtransformation an."""
         with open(self.filepath, 'r') as f:
             lines = f.readlines()
         
@@ -45,6 +104,13 @@ class GeoCodeVisualizer:
                         a = float(parts[4]) if len(parts) > 4 else 0.0
                         b = float(parts[5]) if len(parts) > 5 else 0.0
                         c = float(parts[6]) if len(parts) > 6 else 0.0
+
+                        # Umkehrtransformation: Plattform-Pose → Düsenposition
+                        if self.as_toolpath:
+                            x, y, z, a, b, c = self.compute_toolpath_pose(
+                                x, y, z, a, b, c,
+                                self.bed_offset, self.test_offset
+                            )
                         
                         self.commands.append({
                             'type': 'move',
@@ -111,7 +177,11 @@ class GeoCodeVisualizer:
         return color
     
     def create_gif_animation(self, output_file: str, fps: int = 5, dpi: int = 80):
-        """Erstellt eine GIF-Animation mit jedem Block als Frame"""
+        """Erstellt eine GIF-Animation mit jedem Block als Frame.
+        
+        Koordinatenraum hängt vom im Konstruktor gesetzten 'as_toolpath' Flag ab.
+        """
+        coord_label = 'Werkzeugbahn (Düsenposition)' if self.as_toolpath else 'Plattform-Pose'
         
         import tempfile
         import os
@@ -206,20 +276,7 @@ class GeoCodeVisualizer:
                     # 2D YZ
                     ax_yz.plot(ys, zs, color=color_2d, linewidth=linewidth, alpha=0.8)
                     
-                    # Markiere aktuellen Block
-                    if prev_idx == block_idx:
-                        # Start und Ende des aktuellen Blocks
-                        ax3d.scatter([xs[0]], [ys[0]], [zs[0]], color='lime', s=100, marker='D', edgecolors='darkgreen', linewidths=2)
-                        ax3d.scatter([xs[-1]], [ys[-1]], [zs[-1]], color='cyan', s=100, marker='D', edgecolors='darkblue', linewidths=2)
-                        
-                        ax_xy.scatter([xs[0]], [ys[0]], color='lime', s=100, marker='D', edgecolors='darkgreen', linewidths=2)
-                        ax_xy.scatter([xs[-1]], [ys[-1]], color='cyan', s=100, marker='D', edgecolors='darkblue', linewidths=2)
-                        
-                        ax_xz.scatter([xs[0]], [zs[0]], color='lime', s=100, marker='D', edgecolors='darkgreen', linewidths=2)
-                        ax_xz.scatter([xs[-1]], [zs[-1]], color='cyan', s=100, marker='D', edgecolors='darkblue', linewidths=2)
-                        
-                        ax_yz.scatter([ys[0]], [zs[0]], color='lime', s=100, marker='D', edgecolors='darkgreen', linewidths=2)
-                        ax_yz.scatter([ys[-1]], [zs[-1]], color='cyan', s=100, marker='D', edgecolors='darkblue', linewidths=2)
+
                 
                 # 3D Axis setup
                 ax3d.set_xlabel('X (mm)')
@@ -258,7 +315,10 @@ class GeoCodeVisualizer:
                 ax_yz.grid(True, alpha=0.3)
                 ax_yz.set_aspect('equal', adjustable='box')
                 
-                fig.suptitle(f'Geo-Code Animation - Block {block_idx + 1} von {len(blocks)}', fontsize=16, fontweight='bold')
+                fig.suptitle(
+                    f'Geo-Code Animation [{coord_label}] – Block {block_idx + 1} von {len(blocks)}',
+                    fontsize=14, fontweight='bold'
+                )
                 
                 # Speichere Frame als Datei
                 frame_file = os.path.join(temp_dir, f'frame_{block_idx:04d}.png')
@@ -281,6 +341,16 @@ class GeoCodeVisualizer:
                 loop=0
             )
             print(f"✓ GIF gespeichert: {output_file}")
+
+            # Speichere als mehrseitiges TIFF (Bildreihe in einer Datei)
+            tiff_file = output_file.replace('.gif', '.tiff')
+            images[0].save(
+                tiff_file,
+                save_all=True,
+                append_images=images[1:],
+                compression='lzw',
+            )
+            print(f"✓ TIFF gespeichert: {tiff_file}")
             
             # Speichere auch das letzte Bild separat
             if images:
@@ -326,41 +396,61 @@ class GeoCodeVisualizer:
         return stats
 
 
+def run_visualization(geo_file: Path, as_toolpath: bool,
+                      bed_offset: Tuple = DEFAULT_BED_OFFSET,
+                      test_offset: Tuple = DEFAULT_TEST_OFFSET,
+                      fps: int = 5, dpi: int = 80):
+    """Erstellt GIF + finales PNG für einen Koordinatenraum."""
+
+    mode_label   = 'Toolpath'   if as_toolpath else 'Platform'
+    mode_display = 'Werkzeugbahn (Düsenposition)' if as_toolpath else 'Plattform-Pose'
+    output_gif   = geo_file.parent / f'Kegel_v3_BlockAnimation_{mode_label}.gif'
+
+    print(f"\n{'='*55}")
+    print(f"  Modus: {mode_display}")
+    print(f"{'='*55}")
+
+    visualizer = GeoCodeVisualizer(
+        str(geo_file),
+        as_toolpath=as_toolpath,
+        bed_offset=bed_offset,
+        test_offset=test_offset,
+    )
+
+    stats = visualizer.create_statistics()
+    for key, value in stats.items():
+        print(f"  {key}: {value}")
+
+    print(f"\nErstelle GIF-Animation ({mode_label})...\n")
+    visualizer.create_gif_animation(str(output_gif), fps=fps, dpi=dpi)
+
+    print(f"  → GIF:   {output_gif.name}")
+    print(f"  → PNG:   {output_gif.stem}_final.png")
+
+
 def main():
-    """Hauptfunktion für die Visualisierung"""
-    
-    # Pfad zur Geo-Code Datei
+    """Hauptfunktion – erstellt Visualisierungen in beiden Koordinatenräumen."""
+
     geo_file = Path(__file__).parent / 'output_geo_code' / 'Kegel_v3.geo'
-    
+
     if not geo_file.exists():
         print(f"Datei nicht gefunden: {geo_file}")
         return
-    
+
     print(f"Lade Datei: {geo_file}")
-    visualizer = GeoCodeVisualizer(str(geo_file))
-    
-    # Zeige Statistiken
-    stats = visualizer.create_statistics()
-    print("\n" + "="*50)
-    print("      DRUCKPROZESS STATISTIKEN - KEGEL_V3")
-    print("="*50)
-    for key, value in stats.items():
-        print(f"  {key}: {value}")
-    print("="*50 + "\n")
-    
-    # Erstelle GIF-Animation
-    print("Erstelle GIF-Animation blockweise...\n")
-    output_file = Path(__file__).parent / 'Kegel_v3_BlockAnimation.gif'
-    visualizer.create_gif_animation(str(output_file), fps=5, dpi=80)
-    
-    print("\n" + "="*50)
-    print("  ✅ VISUALISIERUNG ERFOLGREICH ERSTELLT!")
-    print("="*50)
-    print(f"\nÖffne die GIF-Datei: {output_file.name}")
-    print("  → Jeder Frame zeigt einen Druckblock")
-    print("  → Rote Linien = Extruder AN (Drucken)")
-    print("  → Graue Linien = Extruder AUS (Fahren)")
-    print("\n")
+
+    # 1) Plattform-Pose (Originaldarstellung)
+    run_visualization(geo_file, as_toolpath=False)
+
+    # 2) Werkzeugbahn (Umkehrtransformation)
+    run_visualization(geo_file, as_toolpath=True)
+
+    print("\n" + "="*55)
+    print("  ✅ BEIDE VISUALISIERUNGEN ERFOLGREICH ERSTELLT!")
+    print("="*55)
+    print("  Kegel_v3_BlockAnimation_Platform.gif  – Plattform-Pose")
+    print("  Kegel_v3_BlockAnimation_Toolpath.gif  – Werkzeugbahn")
+    print()
 
 
 if __name__ == '__main__':

@@ -11,22 +11,22 @@ Düse beim Rotieren denselben Punkt berührt.
 
 # Ein-/Ausgabe
 INPUT_PATH = 'output_trajektorie/Kegel_v3.txt'
-OUTPUT_PATH = 'output_geo_code/Kegel_v3.geo'
+OUTPUT_PATH = 'output_geo_code/Kegel_v3_space.geo'
 
 # Maximale erlaubte Rotationen
-MAX_ROT_X = 15.0
-MAX_ROT_Y = 15.0
-MAX_ROT_Z = 45.0
+MAX_ROT_X = 25.0
+MAX_ROT_Y = 25.0
+MAX_ROT_Z = 15.0
 
 # Offset des Rotationszentrums
-BED_OFFSET_X = -3.13421237      #-5.25
-BED_OFFSET_Y = -9.74438965      #-28.90
-BED_OFFSET_Z = - 178.13481531   #-173.02
+BED_OFFSET_X = 24.01192936
+BED_OFFSET_Y = -23.95110169
+BED_OFFSET_Z = 184.52700323
 
-# Offset für Extruder-Position (falls nicht bei 0,0,0)
-NOZZLE_OFFSET_X = 10.0
-NOZZLE_OFFSET_Y = -1.5
-NOZZLE_OFFSET_Z = 55.0
+# Offset für Extruder-Position
+TEST_OFFSET_X = 0
+TEST_OFFSET_Y = 0
+TEST_OFFSET_Z = -100
 
 def strip_comments(line):
     return line.split(';')[0].strip()
@@ -60,25 +60,25 @@ def parse_gcode_line(line):
     return components
 
 
-def compute_platform_pose(x, y, z, a, b, c, bed_offset_xyz=(-3.13421237, -9.74438965, -178.13481531), nozzle_offset_xyz=(10.0, -1.5, 55.0)):
+def compute_platform_pose(x, y, z, a, b, c, bed_offset_xyz=(-3.13421237, -9.74438965, -178.13481531), test_offset_xyz=(10.0, -1.5, 55.0)):
     """
     Berechnet Plattform-Pose (Inverse der Düsenpose).
     :param x,y,z: Position (mm)
     :param a,b,c: Rotationen (°)
     :param bed_offset_xyz: Abstand Rotationszentrum–Düse (mm)
-    :param nozzle_offset_xyz: Offset für Extruder-Position (mm)
+    :param test_offset_xyz: Offset für Extruder-Position (mm)
     :return: (px,py,pz,pa,pb,pc)
     """
     bed_offset = np.array(bed_offset_xyz)
-    nozzle_offset = np.array(nozzle_offset_xyz)
+    test_offset = np.array(test_offset_xyz)
 
-    tool_tip = np.array([x, y, z]) - nozzle_offset
+    tool_tip = np.array([x, y, z])
 
     R = Rotation.from_euler('ZYX', [c, b, a], degrees=True)
 
     rot_center = tool_tip - bed_offset
     rotated_offset = R.apply(bed_offset)
-    new_nozzle_pos = rot_center + rotated_offset
+    new_nozzle_pos = rot_center + rotated_offset - test_offset
 
     T_nozzle = np.eye(4)
     T_nozzle[:3, :3] = R.as_matrix()
@@ -93,12 +93,12 @@ def compute_platform_pose(x, y, z, a, b, c, bed_offset_xyz=(-3.13421237, -9.7443
     return pos[0], pos[1], pos[2], euler[2], euler[1], euler[0]
 
 
-def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset=(-3.13421237, -9.74438965, -178.13481531), nozzle_offset=(10.0, -1.5, 55.0)):
+def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset=(-3.13421237, -9.74438965, -178.13481531), test_offset=(10.0, -1.5, 55.0)):
     """
     Wandelt Eingabe-Zeilen in Bewegungsbefehle um.
     Berechnet Plattformpositionen und begrenzt Rotationen.
     """
-    custom_code = ['LA 0.0 0.0 0.0 0.0 0.0 0.0']  # Startpose
+    custom_code = ['LA 0.0 0.0 -100.0 0.0 0.0 0.0']  # Startpose
     custom_ende_code = ''
     last_speed = None
     speed_mode_set = False
@@ -142,7 +142,7 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
             rot_z = np.clip(components.get('C', 0.0), -max_rot_z, max_rot_z)
 
             px, py, pz, pa, pb, pc = compute_platform_pose(
-                curr_x, curr_y, curr_z, rot_x, rot_y, rot_z, bed_offset, nozzle_offset
+                curr_x, curr_y, curr_z, rot_x, rot_y, rot_z, bed_offset, test_offset
             )
 
             custom_code.append(f'LA {px:.5f} {py:.5f} {pz:.5f} {pa:.5f} {pb:.5f} {pc:.5f}')
@@ -152,11 +152,11 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
     return custom_code
 
 
-def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z, bed_offset, nozzle_offset):
+def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset):
     with open(input_filename, 'r') as infile:
         gcode_lines = infile.readlines()
 
-    custom_code = convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset, nozzle_offset)
+    custom_code = convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset)
 
     with open(output_filename, 'w') as outfile:
         outfile.write('\n'.join(custom_code))
@@ -164,7 +164,7 @@ def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z, bed_o
 
 if __name__ == '__main__':
     BED_OFFSET = (BED_OFFSET_X, BED_OFFSET_Y, BED_OFFSET_Z)
-    NOZZLE_OFFSET = (NOZZLE_OFFSET_X, NOZZLE_OFFSET_Y, NOZZLE_OFFSET_Z)
+    TEST_OFFSET = (TEST_OFFSET_X, TEST_OFFSET_Y, TEST_OFFSET_Z)
 
     main(
         INPUT_PATH,
@@ -173,5 +173,5 @@ if __name__ == '__main__':
         MAX_ROT_Y,
         MAX_ROT_Z,
         BED_OFFSET,
-        NOZZLE_OFFSET
+        TEST_OFFSET
     )

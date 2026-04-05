@@ -7,6 +7,9 @@ from scipy.spatial.transform import Rotation
 import warnings
 warnings.filterwarnings('ignore')
 
+# Ein-/Ausgabe
+INPUT_GEO_FILE = "output_geo_code/Kegel_v3.geo"   # Pfad zur .geo Datei (relativ zum Skript)
+
 # Standard-Offsets aus py_geo_code_parser.py
 DEFAULT_BED_OFFSET  = (24.01192936, -23.95110169, 184.52700323)
 DEFAULT_TEST_OFFSET = (0.0, 0.0, 0.0)
@@ -431,7 +434,7 @@ def run_visualization(geo_file: Path, as_toolpath: bool,
 def main():
     """Hauptfunktion – erstellt Visualisierungen in beiden Koordinatenräumen."""
 
-    geo_file = Path(__file__).parent / 'output_geo_code' / 'Kegel_v3.geo'
+    geo_file = Path(__file__).parent / INPUT_GEO_FILE
 
     if not geo_file.exists():
         print(f"Datei nicht gefunden: {geo_file}")

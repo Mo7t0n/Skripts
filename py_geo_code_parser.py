@@ -11,7 +11,7 @@ Düse beim Rotieren denselben Punkt berührt.
 
 # Ein-/Ausgabe
 INPUT_PATH = 'output_trajektorie/Kegel_v3.txt'
-OUTPUT_PATH = 'output_geo_code/Kegel_v3_space.geo'
+OUTPUT_PATH = 'output_geo_code/Kegel_v3.geo'
 
 # Maximale erlaubte Rotationen
 MAX_ROT_X = 25.0
@@ -23,14 +23,13 @@ BED_OFFSET_X = 24.01192936
 BED_OFFSET_Y = -23.95110169
 BED_OFFSET_Z = 184.52700323
 
-# Offset für Extruder-Position
+# Offset zur Extruder-Position für Testzwecke
 TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
-TEST_OFFSET_Z = -100
+TEST_OFFSET_Z = 0
 
 def strip_comments(line):
     return line.split(';')[0].strip()
-
 
 def parse_gcode_line(line):
     """
@@ -92,13 +91,12 @@ def compute_platform_pose(x, y, z, a, b, c, bed_offset_xyz=(-3.13421237, -9.7443
 
     return pos[0], pos[1], pos[2], euler[2], euler[1], euler[0]
 
-
 def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset=(-3.13421237, -9.74438965, -178.13481531), test_offset=(10.0, -1.5, 55.0)):
     """
     Wandelt Eingabe-Zeilen in Bewegungsbefehle um.
     Berechnet Plattformpositionen und begrenzt Rotationen.
     """
-    custom_code = ['LA 0.0 0.0 -100.0 0.0 0.0 0.0']  # Startpose
+    custom_code = ['EXTRUDER_OFF','LA 0.0 0.0 -100.0 0.0 0.0 0.0']  # Startpose
     custom_ende_code = ''
     last_speed = None
     speed_mode_set = False

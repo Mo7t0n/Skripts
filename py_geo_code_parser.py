@@ -96,7 +96,7 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
     Wandelt Eingabe-Zeilen in Bewegungsbefehle um.
     Berechnet Plattformpositionen und begrenzt Rotationen.
     """
-    custom_code = ['EXTRUDER_OFF','LA 0.0 0.0 -100.0 0.0 0.0 0.0']  # Startpose
+    custom_code = ['EXTRUDER_OFF','LA 0.0 0.0 -300.0 0.0 0.0 0.0']  # Startpose
     custom_ende_code = ''
     last_speed = None
     speed_mode_set = False

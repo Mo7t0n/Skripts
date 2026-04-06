@@ -10,9 +10,35 @@ warnings.filterwarnings('ignore')
 # Ein-/Ausgabe
 INPUT_GEO_FILE = "output_geo_code/Kegel_v3.geo"   # Pfad zur .geo Datei (relativ zum Skript)
 
+# Darstellungsmodus
+# 'platform'  → Plattform-Pose (Originalkoordinaten aus dem Geo-File)
+# 'toolpath'  → Werkzeugbahn / Düsenposition (Umkehrtransformation)
+# 'both'      → beide Modi nacheinander
+VISUALIZE_MODE = 'both'
+
 # Standard-Offsets aus py_geo_code_parser.py
 DEFAULT_BED_OFFSET  = (24.01192936, -23.95110169, 184.52700323)
 DEFAULT_TEST_OFFSET = (0.0, 0.0, 0.0)
+
+# Liniendicke (in mm)
+LINE_WIDTH_PRINT  = 3.0   # Liniendicke beim Drucken (Extruder AN), in mm
+LINE_WIDTH_TRAVEL = 0.1  # Liniendicke bei Leerfahrten (Extruder AUS), in mm
+
+# Zufallsfarben für Druckblöcke
+# Ganzzahl → reproduzierbare Farben; None → bei jedem Start neue Farben
+COLOR_RANDOM_SEED = 42
+
+
+def mm_to_pt(mm: float) -> float:
+    """Konvertiert Millimeter in Matplotlib-Linienpunkte (1 pt = 1/72 Zoll)."""
+    return mm * 72.0 / 25.4
+
+
+def generate_block_colors(num_print_blocks: int, seed=COLOR_RANDOM_SEED) -> list:
+    """Erzeugt eine reproduzierbare Liste zufälliger RGB-Farben für Druckblöcke."""
+    rng = np.random.default_rng(seed)
+    colors = rng.random((max(num_print_blocks, 1), 3)) * 0.7 + 0.3
+    return [tuple(c) for c in colors]
 
 
 class GeoCodeVisualizer:
@@ -36,7 +62,12 @@ class GeoCodeVisualizer:
         self.as_toolpath = as_toolpath
         self.bed_offset = np.array(bed_offset)
         self.test_offset = np.array(test_offset)
+        self._shared_colors: Optional[list] = None
         self.parse_file()
+
+    def set_shared_colors(self, colors: list):
+        """Setzt vorab berechnete Farben, die für beide Visualisierungen identisch sind."""
+        self._shared_colors = colors
     
     @staticmethod
     def compute_toolpath_pose(px: float, py: float, pz: float,
@@ -161,28 +192,33 @@ class GeoCodeVisualizer:
         
         return blocks
     
-    def get_block_color(self, blocks: List[Dict], block_idx: int) -> str:
-        """Generiert eine Farbe für einen Block basierend auf Extruder-Status"""
+    def get_block_color(self, blocks: List[Dict], block_idx: int):
+        """Gibt eine Farbe für einen Block zurück – zufällig für Druckblöcke, grau für Leerfahrten."""
         block = blocks[block_idx]
-        
+
         if not block['extruder_on']:
             return 'gray'
-        
-        # Zähle nur die Druck-Blöcke bis zu diesem Index
-        print_blocks_so_far = sum(1 for b in blocks[:block_idx + 1] if b['extruder_on'])
-        total_print_blocks = sum(1 for b in blocks if b['extruder_on'])
-        
-        # Verwende HSV-Farbmodell für kontinuierliche Farbverteilung
-        hue = (print_blocks_so_far - 1) / max(1, total_print_blocks - 1)
-        
-        # Konvertiere HSV zu RGB
-        color = cm.hsv(hue)
-        return color
+
+        print_block_idx = sum(1 for b in blocks[:block_idx + 1] if b['extruder_on']) - 1
+
+        # Geteilte Farben verwenden (falls vorab gesetzt), sonst frisch generieren
+        if self._shared_colors is not None:
+            colors = self._shared_colors
+        else:
+            total_print_blocks = sum(1 for b in blocks if b['extruder_on'])
+            colors = generate_block_colors(total_print_blocks)
+
+        return colors[print_block_idx]
     
-    def create_gif_animation(self, output_file: str, fps: int = 5, dpi: int = 80):
+    def create_gif_animation(self, output_file: str, fps: int = 5, dpi: int = 80,
+                               line_width_print: float = LINE_WIDTH_PRINT,
+                               line_width_travel: float = LINE_WIDTH_TRAVEL):
         """Erstellt eine GIF-Animation mit jedem Block als Frame.
         
         Koordinatenraum hängt vom im Konstruktor gesetzten 'as_toolpath' Flag ab.
+
+        :param line_width_print:  Liniendicke beim Drucken (Extruder AN), in mm
+        :param line_width_travel: Liniendicke bei Leerfahrten (Extruder AUS), in mm
         """
         coord_label = 'Werkzeugbahn (Düsenposition)' if self.as_toolpath else 'Plattform-Pose'
         
@@ -255,11 +291,11 @@ class GeoCodeVisualizer:
                     if prev_block['extruder_on']:
                         color_3d = color
                         color_2d = color
-                        linewidth = 3
+                        linewidth = mm_to_pt(line_width_print)
                     else:
                         color_3d = 'gray'
                         color_2d = 'gray'
-                        linewidth = 1
+                        linewidth = mm_to_pt(line_width_travel)
                     
                     # Extrahiere Koordinaten
                     moves = prev_block['moves']
@@ -268,16 +304,16 @@ class GeoCodeVisualizer:
                     zs = [m['z'] for m in moves]
                     
                     # 3D Plot
-                    ax3d.plot(xs, ys, zs, color=color_3d, linewidth=linewidth, alpha=0.8)
+                    ax3d.plot(xs, ys, zs, color=color_3d, linewidth=linewidth, alpha=1.0)
                     
                     # 2D XY
-                    ax_xy.plot(xs, ys, color=color_2d, linewidth=linewidth, alpha=0.8)
+                    ax_xy.plot(xs, ys, color=color_2d, linewidth=linewidth, alpha=1.0)
                     
                     # 2D XZ
-                    ax_xz.plot(xs, zs, color=color_2d, linewidth=linewidth, alpha=0.8)
+                    ax_xz.plot(xs, zs, color=color_2d, linewidth=linewidth, alpha=1.0)
                     
                     # 2D YZ
-                    ax_yz.plot(ys, zs, color=color_2d, linewidth=linewidth, alpha=0.8)
+                    ax_yz.plot(ys, zs, color=color_2d, linewidth=linewidth, alpha=1.0)
                     
 
                 
@@ -402,7 +438,10 @@ class GeoCodeVisualizer:
 def run_visualization(geo_file: Path, as_toolpath: bool,
                       bed_offset: Tuple = DEFAULT_BED_OFFSET,
                       test_offset: Tuple = DEFAULT_TEST_OFFSET,
-                      fps: int = 5, dpi: int = 80):
+                      fps: int = 5, dpi: int = 80,
+                      line_width_print: float = LINE_WIDTH_PRINT,
+                      line_width_travel: float = LINE_WIDTH_TRAVEL,
+                      shared_colors: Optional[list] = None):
     """Erstellt GIF + finales PNG für einen Koordinatenraum."""
 
     mode_label   = 'Toolpath'   if as_toolpath else 'Platform'
@@ -419,20 +458,24 @@ def run_visualization(geo_file: Path, as_toolpath: bool,
         bed_offset=bed_offset,
         test_offset=test_offset,
     )
+    if shared_colors is not None:
+        visualizer.set_shared_colors(shared_colors)
 
     stats = visualizer.create_statistics()
     for key, value in stats.items():
         print(f"  {key}: {value}")
 
     print(f"\nErstelle GIF-Animation ({mode_label})...\n")
-    visualizer.create_gif_animation(str(output_gif), fps=fps, dpi=dpi)
+    visualizer.create_gif_animation(str(output_gif), fps=fps, dpi=dpi,
+                                    line_width_print=line_width_print,
+                                    line_width_travel=line_width_travel)
 
     print(f"  → GIF:   {output_gif.name}")
     print(f"  → PNG:   {output_gif.stem}_final.png")
 
 
 def main():
-    """Hauptfunktion – erstellt Visualisierungen in beiden Koordinatenräumen."""
+    """Hauptfunktion – erstellt Visualisierungen gemäß VISUALIZE_MODE."""
 
     geo_file = Path(__file__).parent / INPUT_GEO_FILE
 
@@ -442,17 +485,37 @@ def main():
 
     print(f"Lade Datei: {geo_file}")
 
-    # 1) Plattform-Pose (Originaldarstellung)
-    run_visualization(geo_file, as_toolpath=False)
+    mode = VISUALIZE_MODE.strip().lower()
+    if mode not in ('platform', 'toolpath', 'both'):
+        print(f"Unbekannter VISUALIZE_MODE: '{VISUALIZE_MODE}' – bitte 'platform', 'toolpath' oder 'both' verwenden.")
+        return
 
-    # 2) Werkzeugbahn (Umkehrtransformation)
-    run_visualization(geo_file, as_toolpath=True)
+    # Farben einmal vorab berechnen, damit beide Modi identische Farben verwenden
+    _tmp = GeoCodeVisualizer(str(geo_file), as_toolpath=False)
+    _blocks = _tmp.get_blocks()
+    num_print_blocks = sum(1 for b in _blocks if b['extruder_on'])
+    shared_colors = generate_block_colors(num_print_blocks)
+
+    if mode in ('platform', 'both'):
+        run_visualization(geo_file, as_toolpath=False, shared_colors=shared_colors)
+
+    if mode in ('toolpath', 'both'):
+        run_visualization(geo_file, as_toolpath=True, shared_colors=shared_colors)
 
     print("\n" + "="*55)
-    print("  ✅ BEIDE VISUALISIERUNGEN ERFOLGREICH ERSTELLT!")
-    print("="*55)
-    print("  Kegel_v3_BlockAnimation_Platform.gif  – Plattform-Pose")
-    print("  Kegel_v3_BlockAnimation_Toolpath.gif  – Werkzeugbahn")
+    if mode == 'platform':
+        print(" Plattform-Pose erfolgreich erstellt!")
+        print("="*55)
+        print("  Kegel_v3_BlockAnimation_Platform.gif  – Plattform-Pose")
+    elif mode == 'toolpath':
+        print(" Werkzeugbahn erfolgreich erstellt!")
+        print("="*55)
+        print("  Kegel_v3_BlockAnimation_Toolpath.gif  – Werkzeugbahn")
+    else:
+        print(" BEIDE VISUALISIERUNGEN ERFOLGREICH ERSTELLT!")
+        print("="*55)
+        print("  Kegel_v3_BlockAnimation_Platform.gif  – Plattform-Pose")
+        print("  Kegel_v3_BlockAnimation_Toolpath.gif  – Werkzeugbahn")
     print()
 
 

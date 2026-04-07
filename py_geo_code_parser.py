@@ -11,7 +11,7 @@ Düse beim Rotieren denselben Punkt berührt.
 
 # Ein-/Ausgabe
 INPUT_PATH = 'output_trajektorie/Kegel_v3.txt'
-OUTPUT_PATH = 'output_geo_code/Kegel_v3.geo'
+OUTPUT_PATH = 'output_geo_code/Kegel_v3_space.geo'
 
 # Maximale erlaubte Rotationen
 MAX_ROT_X = 25.0
@@ -26,7 +26,7 @@ BED_OFFSET_Z = 184.52700323
 # Offset zur Extruder-Position für Testzwecke
 TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
-TEST_OFFSET_Z = 0
+TEST_OFFSET_Z = -50
 
 def strip_comments(line):
     return line.split(';')[0].strip()

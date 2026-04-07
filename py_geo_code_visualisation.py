@@ -14,14 +14,14 @@ INPUT_GEO_FILE = "output_geo_code/Kegel_v3.geo"   # Pfad zur .geo Datei (relativ
 # 'platform'  → Plattform-Pose (Originalkoordinaten aus dem Geo-File)
 # 'toolpath'  → Werkzeugbahn / Düsenposition (Umkehrtransformation)
 # 'both'      → beide Modi nacheinander
-VISUALIZE_MODE = 'both'
+VISUALIZE_MODE = 'toolpath'
 
 # Standard-Offsets aus py_geo_code_parser.py
-DEFAULT_BED_OFFSET  = (24.01192936, -23.95110169, 184.52700323)
+DEFAULT_BED_OFFSET  = (-0.19494689, 0.40624396, -186.25046989)
 DEFAULT_TEST_OFFSET = (0.0, 0.0, 0.0)
 
 # Liniendicke (in mm)
-LINE_WIDTH_PRINT  = 3.0   # Liniendicke beim Drucken (Extruder AN), in mm
+LINE_WIDTH_PRINT  = 4.0   # Liniendicke beim Drucken (Extruder AN), in mm
 LINE_WIDTH_TRAVEL = 0.1  # Liniendicke bei Leerfahrten (Extruder AUS), in mm
 
 # Zufallsfarben für Druckblöcke

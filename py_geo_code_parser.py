@@ -26,7 +26,7 @@ BED_OFFSET_Z = -186.25046989
 # Offset zur Extruder-Position für Testzwecke
 TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
-TEST_OFFSET_Z = -50
+TEST_OFFSET_Z = -20
 
 def strip_comments(line):
     return line.split(';')[0].strip()
@@ -104,6 +104,9 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
     curr_x = 0.0
     curr_y = 0.0
     curr_z = 0.0
+    curr_a = 0.0
+    curr_b = 0.0
+    curr_c = 0.0
 
     for line in gcode_lines:
         line = strip_comments(line)
@@ -134,10 +137,13 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
             curr_x = components.get('X', curr_x)
             curr_y = components.get('Y', curr_y)
             curr_z = components.get('Z', curr_z)
+            curr_a = components.get('A', curr_a)
+            curr_b = components.get('B', curr_b)
+            curr_c = components.get('C', curr_c)
 
-            rot_x = np.clip(components.get('A', 0.0), -max_rot_x, max_rot_x)
-            rot_y = np.clip(components.get('B', 0.0), -max_rot_y, max_rot_y)
-            rot_z = np.clip(components.get('C', 0.0), -max_rot_z, max_rot_z)
+            rot_x = np.clip(curr_a, -max_rot_x, max_rot_x)
+            rot_y = np.clip(curr_b, -max_rot_y, max_rot_y)
+            rot_z = np.clip(curr_c, -max_rot_z, max_rot_z)
 
             px, py, pz, pa, pb, pc = compute_platform_pose(
                 curr_x, curr_y, curr_z, rot_x, rot_y, rot_z, bed_offset, test_offset

@@ -2,6 +2,7 @@ import os
 import glob
 import re
 import shutil
+from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
@@ -77,6 +78,21 @@ def load_xyzijk_file(filename, input_order="x y z i j k"):
     data_dict = {n: data_std[:, i] for i, n in enumerate(VALID_NAMES)}
     return data_std, data_dict
 
+def _backup_existing_tool_path_data(target_dir, glob_pattern="*.txt"):
+    """Verschiebt vorhandene Tool-Path-Dateien in einen eigenen Zeitstempel-Ordner."""
+    existing_files = sorted(glob.glob(os.path.join(target_dir, glob_pattern)), key=_natural_key)
+    if not existing_files:
+        return None
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = os.path.join(target_dir, f"backup_tool_path_{timestamp}")
+    os.makedirs(backup_dir, exist_ok=True)
+
+    for fp in existing_files:
+        shutil.move(fp, os.path.join(backup_dir, os.path.basename(fp)))
+
+    return backup_dir
+
 def load_xyzijk_path(path, input_order="x y z i j k", glob_pattern="*.txt"):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     fallback_dir = os.path.join(script_dir, INPUT_FALLBACK_DIR)
@@ -85,12 +101,21 @@ def load_xyzijk_path(path, input_order="x y z i j k", glob_pattern="*.txt"):
         # Primärpfad existiert: Dateien laden und in Fallback-Ordner kopieren
         use_path = path
         os.makedirs(fallback_dir, exist_ok=True)
-        if os.path.isdir(path):
-            for fp in sorted(glob.glob(os.path.join(path, glob_pattern)), key=_natural_key):
-                shutil.copy2(fp, os.path.join(fallback_dir, os.path.basename(fp)))
+        same_location = os.path.abspath(path) == os.path.abspath(fallback_dir)
+
+        if not same_location:
+            backup_dir = _backup_existing_tool_path_data(fallback_dir, glob_pattern)
+            if backup_dir:
+                print(f"Vorherige Tool-Path-Daten nach '{backup_dir}' verschoben.")
+
+            if os.path.isdir(path):
+                for fp in sorted(glob.glob(os.path.join(path, glob_pattern)), key=_natural_key):
+                    shutil.copy2(fp, os.path.join(fallback_dir, os.path.basename(fp)))
+            else:
+                shutil.copy2(path, os.path.join(fallback_dir, os.path.basename(path)))
+            print(f"Dateien von '{path}' nach '{fallback_dir}' kopiert.")
         else:
-            shutil.copy2(path, os.path.join(fallback_dir, os.path.basename(path)))
-        print(f"Dateien von '{path}' nach '{fallback_dir}' kopiert.")
+            print(f"Primärpfad und Fallback sind identisch ('{fallback_dir}') - kein Kopieren erforderlich.")
     else:
         # Primärpfad nicht gefunden: Fallback verwenden
         if not os.path.exists(fallback_dir):

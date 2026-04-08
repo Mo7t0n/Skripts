@@ -14,8 +14,8 @@ INPUT_PATH = 'output_trajektorie/Kegel_v3.txt'
 OUTPUT_PATH = 'output_geo_code/Kegel_v3_space.geo'
 
 # Maximale erlaubte Rotationen
-MAX_ROT_X = 25.0
-MAX_ROT_Y = 25.0
+MAX_ROT_X = 20.0
+MAX_ROT_Y = 20.0
 MAX_ROT_Z = 15.0
 
 # Offset des Rotationszentrums

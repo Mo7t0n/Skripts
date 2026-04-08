@@ -13,6 +13,9 @@ Düse beim Rotieren denselben Punkt berührt.
 INPUT_PATH = 'output_trajektorie/Kegel_v3.txt'
 OUTPUT_PATH = 'output_geo_code/Kegel_v3_space.geo'
 
+# Geschwindigkeitskonstante (mm/min)
+SPEED_CONSTANT = 50 * 60  # 8.4 mm/s -> 504 mm/min
+
 # Maximale erlaubte Rotationen
 MAX_ROT_X = 20.0
 MAX_ROT_Y = 20.0
@@ -108,6 +111,11 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
     curr_b = 0.0
     curr_c = 0.0
 
+    prev_x = 0.0
+    prev_y = 0.0
+    prev_z = 0.0
+    total_distance = 0.0
+
     for line in gcode_lines:
         line = strip_comments(line)
         if not line:
@@ -151,16 +159,27 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
 
             custom_code.append(f'LA {px:.5f} {py:.5f} {pz:.5f} {pa:.5f} {pb:.5f} {pc:.5f}')
 
+            segment = np.sqrt((curr_x - prev_x)**2 + (curr_y - prev_y)**2 + (curr_z - prev_z)**2)
+            total_distance += segment
+            prev_x, prev_y, prev_z = curr_x, curr_y, curr_z
+
     custom_code.append(custom_ende_code)
 
-    return custom_code
+    return custom_code, total_distance
 
 
-def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset):
+def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset, speed_constant=SPEED_CONSTANT):
     with open(input_filename, 'r') as infile:
         gcode_lines = infile.readlines()
 
-    custom_code = convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset)
+    custom_code, total_distance = convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset)
+
+    total_time_min = total_distance / speed_constant
+    hours = int(total_time_min // 60)
+    minutes = total_time_min % 60
+    print(f'Gesamtstrecke : {total_distance:.2f} mm')
+    print(f'Geschwindigkeit: {speed_constant:.1f} mm/min')
+    print(f'Gesamtzeit    : {hours} h {minutes:.1f} min')
 
     with open(output_filename, 'w') as outfile:
         outfile.write('\n'.join(custom_code))

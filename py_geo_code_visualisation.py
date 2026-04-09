@@ -179,10 +179,13 @@ class GeoCodeVisualizer:
             
             # Wenn sich Extruder-Status ändert, neuer Block
             if move['extruder_on'] != current_block['extruder_on']:
+                last_move = current_block['moves'][-1]
                 blocks.append(current_block)
+                # Letzten Punkt des Vorgängers als Startpunkt übernehmen,
+                # damit der Druckpfad lückenlos von der Anfahrposition beginnt.
                 current_block = {
                     'extruder_on': move['extruder_on'],
-                    'moves': [move],
+                    'moves': [last_move, move],
                 }
             else:
                 current_block['moves'].append(move)
@@ -446,7 +449,9 @@ def run_visualization(geo_file: Path, as_toolpath: bool,
 
     mode_label   = 'Toolpath'   if as_toolpath else 'Platform'
     mode_display = 'Werkzeugbahn (Düsenposition)' if as_toolpath else 'Plattform-Pose'
-    output_gif   = geo_file.parent / f'Kegel_v3_BlockAnimation_{mode_label}.gif'
+    out_dir = geo_file.parent / geo_file.stem
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output_gif   = out_dir / f'{geo_file.stem}_BlockAnimation_{mode_label}.gif'
 
     print(f"\n{'='*55}")
     print(f"  Modus: {mode_display}")
@@ -470,7 +475,9 @@ def run_visualization(geo_file: Path, as_toolpath: bool,
                                     line_width_print=line_width_print,
                                     line_width_travel=line_width_travel)
 
+    print(f"  → Ordner: {out_dir}")
     print(f"  → GIF:   {output_gif.name}")
+    print(f"  → TIFF:  {output_gif.stem}.tiff")
     print(f"  → PNG:   {output_gif.stem}_final.png")
 
 
@@ -502,20 +509,22 @@ def main():
     if mode in ('toolpath', 'both'):
         run_visualization(geo_file, as_toolpath=True, shared_colors=shared_colors)
 
+    stem = geo_file.stem
+    out_dir = geo_file.parent / stem
     print("\n" + "="*55)
     if mode == 'platform':
         print(" Plattform-Pose erfolgreich erstellt!")
         print("="*55)
-        print("  Kegel_v3_BlockAnimation_Platform.gif  – Plattform-Pose")
+        print(f"  {out_dir / (stem + '_BlockAnimation_Platform.gif')}")
     elif mode == 'toolpath':
         print(" Werkzeugbahn erfolgreich erstellt!")
         print("="*55)
-        print("  Kegel_v3_BlockAnimation_Toolpath.gif  – Werkzeugbahn")
+        print(f"  {out_dir / (stem + '_BlockAnimation_Toolpath.gif')}")
     else:
         print(" BEIDE VISUALISIERUNGEN ERFOLGREICH ERSTELLT!")
         print("="*55)
-        print("  Kegel_v3_BlockAnimation_Platform.gif  – Plattform-Pose")
-        print("  Kegel_v3_BlockAnimation_Toolpath.gif  – Werkzeugbahn")
+        print(f"  {out_dir / (stem + '_BlockAnimation_Platform.gif')}  – Plattform-Pose")
+        print(f"  {out_dir / (stem + '_BlockAnimation_Toolpath.gif')}  – Werkzeugbahn")
     print()
 
 

@@ -16,13 +16,28 @@ INPUT_GEO_FILE = "output_geo_code/Kegel_v4.geo"   # Pfad zur .geo Datei (relativ
 # 'both'      → beide Modi nacheinander
 VISUALIZE_MODE = 'toolpath'
 
+# Kamera der 3D-Ansicht (Grad)
+CAMERA_ELEV_DEG = 20
+CAMERA_AZIM_DEG = 135
+
+# Beschleunigung: True = schnelle Darstellung via vorab erzeugte Linien-Artists.
+# Bei Problemen mit der Darstellung auf False setzen (Kompatibilitätsmodus).
+ENABLE_FAST_RENDER = True
+
+# Gewichtung der Darstellungstiefe (2D + 3D): Schwerpunkt vs. kameranächster Punkt
+DEPTH_WEIGHT_CENTROID = 0.7
+DEPTH_WEIGHT_NEAREST = 0.3
+
 # Standard-Offsets aus py_geo_code_parser.py
 DEFAULT_BED_OFFSET  = (-0.19494689, 0.40624396, -186.25046989)
 DEFAULT_TEST_OFFSET = (0.0, 0.0, 0.0)
 
 # Liniendicke (in mm)
-LINE_WIDTH_PRINT  = 4.0   # Liniendicke beim Drucken (Extruder AN), in mm
-LINE_WIDTH_TRAVEL = 0.1  # Liniendicke bei Leerfahrten (Extruder AUS), in mm
+LINE_WIDTH_PRINT  = 5.0   # Liniendicke beim Drucken, in mm
+LINE_WIDTH_TRAVEL = 0.05  # Liniendicke bei Leerfahrten, in mm
+
+# GIF-Geschwindigkeit (Frames pro Sekunde): höher = schneller, niedriger = langsamer
+GIF_FPS = 20
 
 # Zufallsfarben für Druckblöcke
 # Ganzzahl → reproduzierbare Farben; None → bei jedem Start neue Farben
@@ -41,8 +56,16 @@ def generate_block_colors(num_print_blocks: int, seed=COLOR_RANDOM_SEED) -> list
     return [tuple(c) for c in colors]
 
 
+def blend_depth(centroid_value: float, nearest_value: float) -> float:
+    """Mischt Schwerpunkt- und kameranächste Tiefe gemäß globaler Gewichtung."""
+    w_sum = DEPTH_WEIGHT_CENTROID + DEPTH_WEIGHT_NEAREST
+    if w_sum <= 1e-12:
+        return nearest_value
+    return (DEPTH_WEIGHT_CENTROID * centroid_value + DEPTH_WEIGHT_NEAREST * nearest_value) / w_sum
+
+
 class GeoCodeVisualizer:
-    """Visualisiert Geo-Code Dateien mit Extruder-Status und Liniendicke."""
+    """Visualisiert Geo-Code Dateien mit Druckstatus und Liniendicke."""
     
     def __init__(self, filepath: str,
                  as_toolpath: bool = False,
@@ -211,15 +234,15 @@ class GeoCodeVisualizer:
 
         return colors[print_block_idx]
     
-    def create_gif_animation(self, output_file: str, fps: int = 5, dpi: int = 80,
+    def create_gif_animation(self, output_file: str, fps: int = GIF_FPS, dpi: int = 80,
                                line_width_print: float = LINE_WIDTH_PRINT,
                                line_width_travel: float = LINE_WIDTH_TRAVEL):
         """Erstellt eine GIF-Animation mit jedem Block als Frame.
         
         Koordinatenraum hängt vom im Konstruktor gesetzten 'as_toolpath' Flag ab.
 
-        :param line_width_print:  Liniendicke beim Drucken (Extruder AN), in mm
-        :param line_width_travel: Liniendicke bei Leerfahrten (Extruder AUS), in mm
+        :param line_width_print:  Liniendicke beim Drucken, in mm
+        :param line_width_travel: Liniendicke bei Leerfahrten, in mm
         """
         coord_label = 'Werkzeugbahn (Düsenposition)' if self.as_toolpath else 'Plattform-Pose'
         
@@ -235,7 +258,7 @@ class GeoCodeVisualizer:
 
         prepared_blocks = []
         print_idx = 0
-        for block in blocks:
+        for seq_idx, block in enumerate(blocks):
             moves = block['moves']
             coords = np.array([[m['x'], m['y'], m['z']] for m in moves], dtype=float)
 
@@ -248,18 +271,26 @@ class GeoCodeVisualizer:
                 linewidth = mm_to_pt(line_width_travel)
 
             mean_xyz = np.mean(coords, axis=0)
+            zorder_xy_centroid = float(mean_xyz[2])
+            zorder_xy_nearest = float(np.max(coords[:, 2]))
+            zorder_xz_centroid = float(-mean_xyz[1])
+            zorder_xz_nearest = float(-np.min(coords[:, 1]))
+            zorder_yz_centroid = float(-mean_xyz[0])
+            zorder_yz_nearest = float(-np.min(coords[:, 0]))
             prepared_blocks.append({
+                'seq_idx': seq_idx,
                 'coords': coords,
                 'color': color,
                 'linewidth': linewidth,
                 'extruder_on': block['extruder_on'],
                 # Tiefenwerte für korrekte Überlappung in den 2D-Projektionen:
+                # je Ansicht Gewichtung über DEPTH_WEIGHT_CENTROID / DEPTH_WEIGHT_NEAREST.
                 # XY-Ansicht (von oben): höhere Z = Vordergrund → hoher zorder
                 # XZ-Ansicht (von vorne, Tiefe = Y): kleine Y = Vordergrund → hoher zorder
                 # YZ-Ansicht (von der Seite, Tiefe = X): kleine X = Vordergrund → hoher zorder
-                'zorder_xy': float(mean_xyz[2]),
-                'zorder_xz': float(-mean_xyz[1]),
-                'zorder_yz': float(-mean_xyz[0]),
+                'zorder_xy': blend_depth(zorder_xy_centroid, zorder_xy_nearest),
+                'zorder_xz': blend_depth(zorder_xz_centroid, zorder_xz_nearest),
+                'zorder_yz': blend_depth(zorder_yz_centroid, zorder_yz_nearest),
                 # Tiefe relativ zur Kamera (wird später für Painter's-Sort in 3D gesetzt)
                 'mean_xyz': mean_xyz,
             })
@@ -279,21 +310,33 @@ class GeoCodeVisualizer:
         y_max += y_range * 0.1
         z_min -= z_range * 0.1
         z_max += z_range * 0.1
+
+        # Einheitliche 3D-Skalierung: alle Achsen erhalten dieselbe Spannweite.
+        x_center = 0.5 * (x_min + x_max)
+        y_center = 0.5 * (y_min + y_max)
+        z_center = 0.5 * (z_min + z_max)
+        max_half_span = 0.5 * max(x_max - x_min, y_max - y_min, z_max - z_min)
+        x3_min, x3_max = x_center - max_half_span, x_center + max_half_span
+        y3_min, y3_max = y_center - max_half_span, y_center + max_half_span
+        z3_min, z3_max = z_center - max_half_span, z_center + max_half_span
         
         frames = []
         print(f"Erstelle {len(blocks)} Frames...")
 
-        # Tiefenvektor der Kamera: von der Szene in Richtung Kamera (elev=20°, azim=45°)
-        # Für die 3D-Sortierung verwenden wir den Schwerpunkt (Mittelpunkt) eines Blocks.
-        _elev_r = np.radians(20)
-        _azim_r = np.radians(45)
+        # Tiefenvektor der Kamera: von der Szene in Richtung Kamera
+        # Für die 3D-Sortierung verwenden wir die gleiche einstellbare Mischung
+        # aus Schwerpunkt-Tiefe und dem blicknächsten Punkt eines Blocks.
+        _elev_r = np.radians(CAMERA_ELEV_DEG)
+        _azim_r = np.radians(CAMERA_AZIM_DEG)
         _view_dir = np.array([
             np.cos(_elev_r) * np.cos(_azim_r),
             np.cos(_elev_r) * np.sin(_azim_r),
             np.sin(_elev_r),
         ])
         for pb in prepared_blocks:
-            pb['depth_3d'] = float(np.dot(pb['mean_xyz'], _view_dir))
+            centroid_depth = float(np.dot(pb['mean_xyz'], _view_dir))
+            nearest_depth = float(np.max(pb['coords'] @ _view_dir))
+            pb['depth_3d'] = blend_depth(centroid_depth, nearest_depth)
 
         # Einmalige Figure; 3D-Achse wird pro Frame neu gezeichnet (Painter's Sort),
         # 2D-Achsen bleiben inkrementell mit zorder.
@@ -307,16 +350,17 @@ class GeoCodeVisualizer:
         ax_xz = fig.add_subplot(2, 2, 3)
         ax_yz = fig.add_subplot(2, 2, 4)
 
-        ELEV, AZIM = 20, 45
+        ELEV, AZIM = CAMERA_ELEV_DEG, CAMERA_AZIM_DEG
 
         def _setup_ax3d(ax, title=''):
             """(Neu-)Einrichten der 3D-Achse nach cla()."""
             ax.set_xlabel('X (mm)')
             ax.set_ylabel('Y (mm)')
             ax.set_zlabel('Z (mm)')
-            ax.set_xlim(x_min, x_max)
-            ax.set_ylim(y_min, y_max)
-            ax.set_zlim(z_min, z_max)
+            ax.set_xlim(x3_min, x3_max)
+            ax.set_ylim(y3_min, y3_max)
+            ax.set_zlim(z3_min, z3_max)
+            ax.set_box_aspect((1.0, 1.0, 1.0))
             ax.view_init(elev=ELEV, azim=AZIM)
             if title:
                 ax.set_title(title)
@@ -339,6 +383,7 @@ class GeoCodeVisualizer:
         ax_xz.set_title('Seitenansicht (X-Z)')
         ax_xz.grid(True, alpha=0.3)
         ax_xz.set_aspect('equal', adjustable='box')
+        ax_xz.invert_xaxis()
 
         ax_yz.set_xlabel('Y (mm)')
         ax_yz.set_ylabel('Z (mm)')
@@ -347,42 +392,87 @@ class GeoCodeVisualizer:
         ax_yz.set_title('Seitenansicht (Y-Z)')
         ax_yz.grid(True, alpha=0.3)
         ax_yz.set_aspect('equal', adjustable='box')
+        ax_yz.invert_xaxis()
+
+        seq_to_block = {pb['seq_idx']: pb for pb in prepared_blocks}
+
+        if ENABLE_FAST_RENDER:
+            # Linien nur einmal erzeugen und anschließend frameweise einblenden.
+            depth_sorted = sorted(prepared_blocks, key=lambda b: b['depth_3d'])
+            for pb in depth_sorted:
+                c = pb['coords']
+                pb['artist_3d'] = ax3d.plot(
+                    c[:, 0], c[:, 1], c[:, 2],
+                    color=pb['color'], linewidth=pb['linewidth'], alpha=1.0, visible=False
+                )[0]
+                pb['artist_xy'] = ax_xy.plot(
+                    c[:, 0], c[:, 1],
+                    color=pb['color'], linewidth=pb['linewidth'], alpha=1.0,
+                    zorder=pb['zorder_xy'], visible=False
+                )[0]
+                pb['artist_xz'] = ax_xz.plot(
+                    c[:, 0], c[:, 2],
+                    color=pb['color'], linewidth=pb['linewidth'], alpha=1.0,
+                    zorder=pb['zorder_xz'], visible=False
+                )[0]
+                pb['artist_yz'] = ax_yz.plot(
+                    c[:, 1], c[:, 2],
+                    color=pb['color'], linewidth=pb['linewidth'], alpha=1.0,
+                    zorder=pb['zorder_yz'], visible=False
+                )[0]
 
         from PIL import Image
+        last_visible_seq = -1
         for block_idx, prep in enumerate(prepared_blocks):
             # Zeige Fortschritt
             if (block_idx + 1) % max(1, len(prepared_blocks) // 10) == 0:
                 print(f"  Frame {block_idx + 1}/{len(prepared_blocks)}")
 
-            coords = prep['coords']
-            color = prep['color']
-            linewidth = prep['linewidth']
+            block_idx_text = f"{block_idx + 1:03d}"
 
-            xs = coords[:, 0]
-            ys = coords[:, 1]
-            zs = coords[:, 2]
+            if ENABLE_FAST_RENDER:
+                # Nur neu hinzugekommene Sequenzen sichtbar schalten.
+                for seq_idx in range(last_visible_seq + 1, block_idx + 1):
+                    pb = seq_to_block.get(seq_idx)
+                    if pb is None:
+                        continue
+                    pb['artist_3d'].set_visible(True)
+                    pb['artist_xy'].set_visible(True)
+                    pb['artist_xz'].set_visible(True)
+                    pb['artist_yz'].set_visible(True)
+                last_visible_seq = block_idx
 
-            # 3D: alle bisherigen Blöcke nach Kamera-Tiefe sortiert neu zeichnen (Painter's Algorithm)
-            title_3d = f'3D View - Block {block_idx + 1}/{len(prepared_blocks)}\nExtruder: {"AN" if prep["extruder_on"] else "AUS"}'
-            ax3d.cla()
-            _setup_ax3d(ax3d, title=title_3d)
-            visible = prepared_blocks[:block_idx + 1]
-            for pb in sorted(visible, key=lambda b: b['depth_3d']):  # fern → nah
-                c = pb['coords']
-                ax3d.plot(c[:, 0], c[:, 1], c[:, 2],
-                          color=pb['color'], linewidth=pb['linewidth'], alpha=1.0)
+                ax3d.set_title("3D-Ansicht")
+            else:
+                coords = prep['coords']
+                color = prep['color']
+                linewidth = prep['linewidth']
 
-            # 2D: inkrementell mit zorder für korrekte Überlappung
-            # zorder steuert die Zeichenreihenfolge in den 2D-Ansichten:
-            # Vordergrund-Linien (näher am Betrachter) erhalten einen höheren zorder-Wert.
-            ax_xy.plot(xs, ys, color=color, linewidth=linewidth, alpha=1.0,
-                       zorder=prep['zorder_xy'])
-            ax_xz.plot(xs, zs, color=color, linewidth=linewidth, alpha=1.0,
-                       zorder=prep['zorder_xz'])
-            ax_yz.plot(ys, zs, color=color, linewidth=linewidth, alpha=1.0,
-                       zorder=prep['zorder_yz'])
+                xs = coords[:, 0]
+                ys = coords[:, 1]
+                zs = coords[:, 2]
+
+                # 3D: alle bisherigen Blöcke nach Kamera-Tiefe sortiert neu zeichnen (Painter's Algorithm)
+                title_3d = "3D-Ansicht"
+                ax3d.cla()
+                _setup_ax3d(ax3d, title=title_3d)
+                visible = prepared_blocks[:block_idx + 1]
+                for pb in sorted(visible, key=lambda b: b['depth_3d']):  # fern → nah
+                    c = pb['coords']
+                    ax3d.plot(c[:, 0], c[:, 1], c[:, 2],
+                              color=pb['color'], linewidth=pb['linewidth'], alpha=1.0)
+
+                # 2D: inkrementell mit zorder für korrekte Überlappung
+                # zorder steuert die Zeichenreihenfolge in den 2D-Ansichten:
+                # Vordergrund-Linien (näher am Betrachter) erhalten einen höheren zorder-Wert.
+                ax_xy.plot(xs, ys, color=color, linewidth=linewidth, alpha=1.0,
+                           zorder=prep['zorder_xy'])
+                ax_xz.plot(xs, zs, color=color, linewidth=linewidth, alpha=1.0,
+                           zorder=prep['zorder_xz'])
+                ax_yz.plot(ys, zs, color=color, linewidth=linewidth, alpha=1.0,
+                           zorder=prep['zorder_yz'])
             fig.suptitle(
-                f'Geo-Code Animation [{coord_label}] – Block {block_idx + 1} von {len(prepared_blocks)}',
+                f'Geo-Code Animation {coord_label} – Block {block_idx_text} von {len(prepared_blocks)}',
                 fontsize=14, fontweight='bold'
             )
 
@@ -429,8 +519,8 @@ class GeoCodeVisualizer:
         if not moves:
             return {
                 'Gesamt_Befehle': 0,
-                'Extruder_AN_Befehle': 0,
-                'Extruder_AUS_Befehle': 0,
+                'Druck_Befehle': 0,
+                'Leerfahrt_Befehle': 0,
                 'Gesamt_Bloecke': 0,
                 'Druck_Bloecke': 0,
                 'Fahr_Bloecke': 0,
@@ -456,8 +546,8 @@ class GeoCodeVisualizer:
         
         stats = {
             'Gesamt_Befehle': len(moves),
-            'Extruder_AN_Befehle': on_count,
-            'Extruder_AUS_Befehle': off_count,
+            'Druck_Befehle': on_count,
+            'Leerfahrt_Befehle': off_count,
             'Gesamt_Bloecke': len(blocks),
             'Druck_Bloecke': len(on_blocks),
             'Fahr_Bloecke': len(off_blocks),
@@ -473,7 +563,7 @@ class GeoCodeVisualizer:
 def run_visualization(geo_file: Path, as_toolpath: bool,
                       bed_offset: Tuple = DEFAULT_BED_OFFSET,
                       test_offset: Tuple = DEFAULT_TEST_OFFSET,
-                      fps: int = 5, dpi: int = 80,
+                      fps: int = GIF_FPS, dpi: int = 80,
                       line_width_print: float = LINE_WIDTH_PRINT,
                       line_width_travel: float = LINE_WIDTH_TRAVEL,
                       shared_colors: Optional[list] = None):

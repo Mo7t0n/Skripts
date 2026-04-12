@@ -29,8 +29,9 @@ def load_and_repair_stl(path: Path) -> "trimesh.Trimesh":
     if not isinstance(mesh, trimesh.Trimesh):
         raise ValueError(f"'{path}' ist kein gültiges Dreiecksnetz.")
     mesh.remove_unreferenced_vertices()
-    mesh.remove_duplicate_faces()
-    mesh.remove_degenerate_faces()
+    unique, _ = trimesh.grouping.unique_rows(mesh.faces)
+    mesh.update_faces(unique)
+    mesh.update_faces(mesh.nondegenerate_faces())
     trimesh.repair.fix_normals(mesh)
     trimesh.repair.fill_holes(mesh)
     if not mesh.is_watertight:
@@ -63,14 +64,12 @@ def tetrahedralize(verts: np.ndarray, faces: np.ndarray,
     verts = np.ascontiguousarray(verts, dtype=np.float64)
     t = tetgen.TetGen(verts, faces)
 
-    opts = f"pq{quality}"
+    opts: dict = {"plc": True, "quality": True, "minratio": quality}
     if max_volume and max_volume > 0:
-        opts += f"a{max_volume}"
+        opts["fixedvolume"] = True
+        opts["maxvolume"] = max_volume
 
-    try:
-        t.tetrahedralize(opts)
-    except TypeError:
-        print("Fehler beim Erzeugen des Tetraedergitters")
+    t.tetrahedralize(**opts)
 
     nodes = np.asarray(t.node)
     tets = np.asarray(t.elem)

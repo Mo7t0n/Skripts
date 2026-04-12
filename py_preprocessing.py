@@ -11,8 +11,8 @@ import trimesh
 import tetgen
 
 # Ein-/Ausgabe
-INPUT_PATH = r"input_stl/Kegel_v3.stl"  # Datei (STL)
-OUTPUT_PATH = r"output_tet/Kegel_v3.tet"  # Ausgabedatei (.tet); wenn leer -> <input>.tet
+INPUT_PATH = r"input_stl/Kegel_v4.stl"  # Datei (STL)
+OUTPUT_PATH = r"output_tet/Kegel_v4.tet"  # Ausgabedatei (.tet); wenn leer -> <input>.tet
 Y_UP = True  # True: (x,y,z)->(x,z,y), Up-Achse = Y
 ANGLE_DEG = 20.0  # handle=1 wenn Fläche flacher als ANGLE (zur Up-Achse)
 FIX_ON_HANDLE = True  # fixed = 1, wenn handle = 1

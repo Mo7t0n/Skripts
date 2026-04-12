@@ -37,7 +37,7 @@ LINE_WIDTH_PRINT  = 5.0   # Liniendicke beim Drucken, in mm
 LINE_WIDTH_TRAVEL = 0.05  # Liniendicke bei Leerfahrten, in mm
 
 # GIF-Geschwindigkeit (Frames pro Sekunde): höher = schneller, niedriger = langsamer
-GIF_FPS = 20
+GIF_FPS = 60
 
 # Zufallsfarben für Druckblöcke
 # Ganzzahl → reproduzierbare Farben; None → bei jedem Start neue Farben

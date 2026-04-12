@@ -247,11 +247,21 @@ class GeoCodeVisualizer:
                 color = 'gray'
                 linewidth = mm_to_pt(line_width_travel)
 
+            mean_xyz = np.mean(coords, axis=0)
             prepared_blocks.append({
                 'coords': coords,
                 'color': color,
                 'linewidth': linewidth,
                 'extruder_on': block['extruder_on'],
+                # Tiefenwerte für korrekte Überlappung in den 2D-Projektionen:
+                # XY-Ansicht (von oben): höhere Z = Vordergrund → hoher zorder
+                # XZ-Ansicht (von vorne, Tiefe = Y): kleine Y = Vordergrund → hoher zorder
+                # YZ-Ansicht (von der Seite, Tiefe = X): kleine X = Vordergrund → hoher zorder
+                'zorder_xy': float(mean_xyz[2]),
+                'zorder_xz': float(-mean_xyz[1]),
+                'zorder_yz': float(-mean_xyz[0]),
+                # Tiefe relativ zur Kamera (wird später für Painter's-Sort in 3D gesetzt)
+                'mean_xyz': mean_xyz,
             })
 
         all_coords = np.vstack([b['coords'] for b in prepared_blocks])
@@ -272,7 +282,21 @@ class GeoCodeVisualizer:
         
         frames = []
         print(f"Erstelle {len(blocks)} Frames...")
-        # Einmalige Figure; pro Frame nur den nächsten Block ergänzen und Bild aus dem Canvas ziehen
+
+        # Tiefenvektor der Kamera: von der Szene in Richtung Kamera (elev=20°, azim=45°)
+        # Für die 3D-Sortierung verwenden wir den Schwerpunkt (Mittelpunkt) eines Blocks.
+        _elev_r = np.radians(20)
+        _azim_r = np.radians(45)
+        _view_dir = np.array([
+            np.cos(_elev_r) * np.cos(_azim_r),
+            np.cos(_elev_r) * np.sin(_azim_r),
+            np.sin(_elev_r),
+        ])
+        for pb in prepared_blocks:
+            pb['depth_3d'] = float(np.dot(pb['mean_xyz'], _view_dir))
+
+        # Einmalige Figure; 3D-Achse wird pro Frame neu gezeichnet (Painter's Sort),
+        # 2D-Achsen bleiben inkrementell mit zorder.
         fig = plt.figure(figsize=(16, 12), dpi=dpi)
 
         # 3D Subplot
@@ -283,14 +307,22 @@ class GeoCodeVisualizer:
         ax_xz = fig.add_subplot(2, 2, 3)
         ax_yz = fig.add_subplot(2, 2, 4)
 
+        ELEV, AZIM = 20, 45
+
+        def _setup_ax3d(ax, title=''):
+            """(Neu-)Einrichten der 3D-Achse nach cla()."""
+            ax.set_xlabel('X (mm)')
+            ax.set_ylabel('Y (mm)')
+            ax.set_zlabel('Z (mm)')
+            ax.set_xlim(x_min, x_max)
+            ax.set_ylim(y_min, y_max)
+            ax.set_zlim(z_min, z_max)
+            ax.view_init(elev=ELEV, azim=AZIM)
+            if title:
+                ax.set_title(title)
+
         # Statisches Axis-Setup
-        ax3d.set_xlabel('X (mm)')
-        ax3d.set_ylabel('Y (mm)')
-        ax3d.set_zlabel('Z (mm)')
-        ax3d.set_xlim(x_min, x_max)
-        ax3d.set_ylim(y_min, y_max)
-        ax3d.set_zlim(z_min, z_max)
-        ax3d.view_init(elev=20, azim=45)
+        _setup_ax3d(ax3d)
 
         ax_xy.set_xlabel('X (mm)')
         ax_xy.set_ylabel('Y (mm)')
@@ -330,15 +362,25 @@ class GeoCodeVisualizer:
             ys = coords[:, 1]
             zs = coords[:, 2]
 
-            # Nur neuen Block hinzufügen (kumulative Darstellung entsteht automatisch)
-            ax3d.plot(xs, ys, zs, color=color, linewidth=linewidth, alpha=1.0)
-            ax_xy.plot(xs, ys, color=color, linewidth=linewidth, alpha=1.0)
-            ax_xz.plot(xs, zs, color=color, linewidth=linewidth, alpha=1.0)
-            ax_yz.plot(ys, zs, color=color, linewidth=linewidth, alpha=1.0)
+            # 3D: alle bisherigen Blöcke nach Kamera-Tiefe sortiert neu zeichnen (Painter's Algorithm)
+            title_3d = f'3D View - Block {block_idx + 1}/{len(prepared_blocks)}\nExtruder: {"AN" if prep["extruder_on"] else "AUS"}'
+            ax3d.cla()
+            _setup_ax3d(ax3d, title=title_3d)
+            visible = prepared_blocks[:block_idx + 1]
+            for pb in sorted(visible, key=lambda b: b['depth_3d']):  # fern → nah
+                c = pb['coords']
+                ax3d.plot(c[:, 0], c[:, 1], c[:, 2],
+                          color=pb['color'], linewidth=pb['linewidth'], alpha=1.0)
 
-            ax3d.set_title(
-                f'3D View - Block {block_idx + 1}/{len(prepared_blocks)}\nExtruder: {"AN" if prep["extruder_on"] else "AUS"}'
-            )
+            # 2D: inkrementell mit zorder für korrekte Überlappung
+            # zorder steuert die Zeichenreihenfolge in den 2D-Ansichten:
+            # Vordergrund-Linien (näher am Betrachter) erhalten einen höheren zorder-Wert.
+            ax_xy.plot(xs, ys, color=color, linewidth=linewidth, alpha=1.0,
+                       zorder=prep['zorder_xy'])
+            ax_xz.plot(xs, zs, color=color, linewidth=linewidth, alpha=1.0,
+                       zorder=prep['zorder_xz'])
+            ax_yz.plot(ys, zs, color=color, linewidth=linewidth, alpha=1.0,
+                       zorder=prep['zorder_yz'])
             fig.suptitle(
                 f'Geo-Code Animation [{coord_label}] – Block {block_idx + 1} von {len(prepared_blocks)}',
                 fontsize=14, fontweight='bold'

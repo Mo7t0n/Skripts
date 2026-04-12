@@ -2,6 +2,7 @@ import os
 import glob
 import re
 import shutil
+import filecmp
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
@@ -93,6 +94,31 @@ def _backup_existing_tool_path_data(target_dir, glob_pattern="*.txt"):
 
     return backup_dir
 
+def _list_source_path_files(path, glob_pattern="*.txt"):
+    """Liefert Quelldateien, die in den Fallback kopiert werden würden."""
+    if os.path.isdir(path):
+        return sorted(glob.glob(os.path.join(path, glob_pattern)), key=_natural_key)
+    return [path]
+
+def _target_needs_update(source_files, target_dir, glob_pattern="*.txt"):
+    """Prüft, ob sich Ziel-Dateien in Namen oder Inhalt von den Quell-Dateien unterscheiden."""
+    target_files = sorted(glob.glob(os.path.join(target_dir, glob_pattern)), key=_natural_key)
+    target_by_name = {os.path.basename(fp): fp for fp in target_files}
+
+    source_names = [os.path.basename(fp) for fp in source_files]
+    target_names = [os.path.basename(fp) for fp in target_files]
+    if source_names != target_names:
+        return True
+
+    for src in source_files:
+        dst = target_by_name.get(os.path.basename(src))
+        if dst is None:
+            return True
+        if not filecmp.cmp(src, dst, shallow=False):
+            return True
+
+    return False
+
 def _output_named_input_subdir(base_dir, output_path):
     """Erstellt den Ziel-Unterordner auf Basis des Output-Dateinamens."""
     output_name = os.path.splitext(os.path.basename(output_path))[0]
@@ -114,16 +140,19 @@ def load_xyzijk_path(path, input_order="x y z i j k", glob_pattern="*.txt", outp
         same_location = os.path.abspath(path) == os.path.abspath(fallback_dir)
 
         if not same_location:
-            backup_dir = _backup_existing_tool_path_data(fallback_dir, glob_pattern)
-            if backup_dir:
-                print(f"Vorherige Tool-Path-Daten nach '{backup_dir}' verschoben.")
+            source_files = _list_source_path_files(path, glob_pattern)
+            needs_update = _target_needs_update(source_files, fallback_dir, glob_pattern)
 
-            if os.path.isdir(path):
-                for fp in sorted(glob.glob(os.path.join(path, glob_pattern)), key=_natural_key):
+            if needs_update:
+                backup_dir = _backup_existing_tool_path_data(fallback_dir, glob_pattern)
+                if backup_dir:
+                    print(f"Vorherige Tool-Path-Daten nach '{backup_dir}' verschoben.")
+
+                for fp in source_files:
                     shutil.copy2(fp, os.path.join(fallback_dir, os.path.basename(fp)))
+                print(f"Dateien von '{path}' nach '{fallback_dir}' kopiert.")
             else:
-                shutil.copy2(path, os.path.join(fallback_dir, os.path.basename(path)))
-            print(f"Dateien von '{path}' nach '{fallback_dir}' kopiert.")
+                print(f"Tool-Path-Dateien unverändert - kein Backup und kein Kopieren nach '{fallback_dir}'.")
         else:
             print(f"Primärpfad und Fallback sind identisch ('{fallback_dir}') - kein Kopieren erforderlich.")
     else:

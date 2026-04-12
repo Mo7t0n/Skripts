@@ -27,7 +27,7 @@ ARROW_LENGTH_RATIO = 0.25
 
 # Export
 EXPORT_TRAJEKTORIE            = True
-OUTPUT_TRAJEKTORIE_PATH       = "output_trajektorie/Kegel_v3.txt"
+OUTPUT_TRAJEKTORIE_PATH       = "output_trajektorie/Kegel_v4.txt"
 WRITE_A_B_C             = True           # A/B/C schreiben (als Euler in Grad)
 DECIMALS_XYZ            = 5              # Nachkommastellen für X/Y/Z
 DECIMALS_ABC            = 6              # Nachkommastellen für A/B/C
@@ -93,9 +93,19 @@ def _backup_existing_tool_path_data(target_dir, glob_pattern="*.txt"):
 
     return backup_dir
 
-def load_xyzijk_path(path, input_order="x y z i j k", glob_pattern="*.txt"):
+def _output_named_input_subdir(base_dir, output_path):
+    """Erstellt den Ziel-Unterordner auf Basis des Output-Dateinamens."""
+    output_name = os.path.splitext(os.path.basename(output_path))[0]
+    if not output_name:
+        output_name = "default"
+    return os.path.join(base_dir, output_name)
+
+def load_xyzijk_path(path, input_order="x y z i j k", glob_pattern="*.txt", output_path=None):
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    fallback_dir = os.path.join(script_dir, INPUT_FALLBACK_DIR)
+    fallback_base_dir = os.path.join(script_dir, INPUT_FALLBACK_DIR)
+    fallback_dir = fallback_base_dir
+    if output_path:
+        fallback_dir = _output_named_input_subdir(fallback_base_dir, output_path)
 
     if os.path.exists(path):
         # Primärpfad existiert: Dateien laden und in Fallback-Ordner kopieren
@@ -489,7 +499,12 @@ def visualize_trajektorie(data_std, meta):
 
 
 # Daten laden
-data_std, data, meta = load_xyzijk_path(INPUT_PATH_OR_DIR, INPUT_ORDER, GLOB_PATTERN)
+data_std, data, meta = load_xyzijk_path(
+    INPUT_PATH_OR_DIR,
+    INPUT_ORDER,
+    GLOB_PATTERN,
+    output_path=OUTPUT_TRAJEKTORIE_PATH,
+)
 
 # Visualisierung
 visualize_trajektorie(data_std, meta)

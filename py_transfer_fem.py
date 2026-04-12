@@ -1,9 +1,9 @@
 import os, re, sys, numpy as np
 
 # Ein-/Ausgabe
-INPUT_TET = r"output_tet/Kegel_v3.tet"
+INPUT_TET = r"output_tet/Kegel_v4.tet"
 INPUT_STRESS_DIR = r"input_fem"
-OUTPUT_TXT = r"output_fem/SR_Kegel_v3.txt"
+OUTPUT_TXT = r"output_fem/SR_Kegel_v4.txt"
 USE_CORNER_CENTROIDS = True
 
 Q = np.array([[1, 0, 0],

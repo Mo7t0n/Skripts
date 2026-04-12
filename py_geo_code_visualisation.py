@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Ein-/Ausgabe
-INPUT_GEO_FILE = "output_geo_code/Kegel_v3.geo"   # Pfad zur .geo Datei (relativ zum Skript)
+INPUT_GEO_FILE = "output_geo_code/Kegel_v4.geo"   # Pfad zur .geo Datei (relativ zum Skript)
 
 # Darstellungsmodus
 # 'platform'  → Plattform-Pose (Originalkoordinaten aus dem Geo-File)
@@ -111,53 +111,51 @@ class GeoCodeVisualizer:
 
     def parse_file(self):
         """Parst die Geo-Code Datei und wendet ggf. Umkehrtransformation an."""
-        with open(self.filepath, 'r') as f:
-            lines = f.readlines()
-        
         self.commands = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            
-            if line.startswith('EXTRUDER_'):
-                # Extruder Befehl
-                self.extruder_state = 'ON' in line
-                self.commands.append({
-                    'type': 'extruder',
-                    'state': 'ON' if 'ON' in line else 'OFF',
-                })
-            elif line.startswith('LA'):
-                # Linear Axis Befehl: LA x y z a b c
-                parts = line.split()
-                if len(parts) >= 4:
-                    try:
-                        x = float(parts[1])
-                        y = float(parts[2])
-                        z = float(parts[3])
-                        a = float(parts[4]) if len(parts) > 4 else 0.0
-                        b = float(parts[5]) if len(parts) > 5 else 0.0
-                        c = float(parts[6]) if len(parts) > 6 else 0.0
+        with open(self.filepath, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
 
-                        # Umkehrtransformation: Plattform-Pose → Düsenposition
-                        if self.as_toolpath:
-                            x, y, z, a, b, c = self.compute_toolpath_pose(
-                                x, y, z, a, b, c,
-                                self.bed_offset, self.test_offset
-                            )
-                        
-                        self.commands.append({
-                            'type': 'move',
-                            'x': x,
-                            'y': y,
-                            'z': z,
-                            'a': a,
-                            'b': b,
-                            'c': c,
-                            'extruder_on': self.extruder_state,
-                        })
-                    except (ValueError, IndexError):
-                        pass
+                if line.startswith('EXTRUDER_'):
+                    # Extruder Befehl
+                    self.extruder_state = 'ON' in line
+                    self.commands.append({
+                        'type': 'extruder',
+                        'state': 'ON' if 'ON' in line else 'OFF',
+                    })
+                elif line.startswith('LA'):
+                    # Linear Axis Befehl: LA x y z a b c
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        try:
+                            x = float(parts[1])
+                            y = float(parts[2])
+                            z = float(parts[3])
+                            a = float(parts[4]) if len(parts) > 4 else 0.0
+                            b = float(parts[5]) if len(parts) > 5 else 0.0
+                            c = float(parts[6]) if len(parts) > 6 else 0.0
+
+                            # Umkehrtransformation: Plattform-Pose → Düsenposition
+                            if self.as_toolpath:
+                                x, y, z, a, b, c = self.compute_toolpath_pose(
+                                    x, y, z, a, b, c,
+                                    self.bed_offset, self.test_offset
+                                )
+
+                            self.commands.append({
+                                'type': 'move',
+                                'x': x,
+                                'y': y,
+                                'z': z,
+                                'a': a,
+                                'b': b,
+                                'c': c,
+                                'extruder_on': self.extruder_state,
+                            })
+                        except (ValueError, IndexError):
+                            pass
     
     def get_blocks(self) -> List[Dict]:
         """Gruppiert Moves in zusammenhängende Blöcke basierend auf Extruder-Status"""
@@ -225,29 +223,40 @@ class GeoCodeVisualizer:
         """
         coord_label = 'Werkzeugbahn (Düsenposition)' if self.as_toolpath else 'Plattform-Pose'
         
-        import tempfile
-        import os
-        
         blocks = self.get_blocks()
         
         if not blocks:
             print("Keine Blöcke gefunden!")
             return
         
-        # Sammle alle Koordinaten für Skalierung
-        all_x = []
-        all_y = []
-        all_z = []
-        
+        # Blockdaten einmalig vorbereiten (vermeidet wiederholte Listen-/Farb-Berechnung pro Frame)
+        total_print_blocks = sum(1 for b in blocks if b['extruder_on'])
+        shared_colors = self._shared_colors if self._shared_colors is not None else generate_block_colors(total_print_blocks)
+
+        prepared_blocks = []
+        print_idx = 0
         for block in blocks:
-            for move in block['moves']:
-                all_x.append(move['x'])
-                all_y.append(move['y'])
-                all_z.append(move['z'])
-        
-        x_min, x_max = min(all_x), max(all_x)
-        y_min, y_max = min(all_y), max(all_y)
-        z_min, z_max = min(all_z), max(all_z)
+            moves = block['moves']
+            coords = np.array([[m['x'], m['y'], m['z']] for m in moves], dtype=float)
+
+            if block['extruder_on']:
+                color = shared_colors[print_idx]
+                print_idx += 1
+                linewidth = mm_to_pt(line_width_print)
+            else:
+                color = 'gray'
+                linewidth = mm_to_pt(line_width_travel)
+
+            prepared_blocks.append({
+                'coords': coords,
+                'color': color,
+                'linewidth': linewidth,
+                'extruder_on': block['extruder_on'],
+            })
+
+        all_coords = np.vstack([b['coords'] for b in prepared_blocks])
+        x_min, y_min, z_min = np.min(all_coords, axis=0)
+        x_max, y_max, z_max = np.max(all_coords, axis=0)
         
         # Puffer
         x_range = x_max - x_min if x_max != x_min else 1
@@ -261,120 +270,91 @@ class GeoCodeVisualizer:
         z_min -= z_range * 0.1
         z_max += z_range * 0.1
         
-        # Erstelle temporären Ordner für Bilder
-        temp_dir = tempfile.mkdtemp()
         frames = []
         print(f"Erstelle {len(blocks)} Frames...")
-        
-        try:
-            for block_idx, block in enumerate(blocks):
-                # Zeige Fortschritt
-                if (block_idx + 1) % max(1, len(blocks) // 10) == 0:
-                    print(f"  Frame {block_idx + 1}/{len(blocks)}")
-                
-                # Erstelle Figure
-                fig = plt.figure(figsize=(16, 12), dpi=dpi)
-                
-                # 3D Subplot
-                ax3d = fig.add_subplot(2, 2, 1, projection='3d')
-                
-                # 2D Subplots
-                ax_xy = fig.add_subplot(2, 2, 2)
-                ax_xz = fig.add_subplot(2, 2, 3)
-                ax_yz = fig.add_subplot(2, 2, 4)
-                
-                # Zeichne alle bisherigen Blöcke (kumulativ)
-                for prev_idx in range(block_idx + 1):
-                    prev_block = blocks[prev_idx]
-                    
-                    # Erhalte Farbe basierend auf Extruder-Status und Block-Index
-                    color = self.get_block_color(blocks, prev_idx)
-                    
-                    # Bei Graustufen-Farbe für graues Fahren
-                    if prev_block['extruder_on']:
-                        color_3d = color
-                        color_2d = color
-                        linewidth = mm_to_pt(line_width_print)
-                    else:
-                        color_3d = 'gray'
-                        color_2d = 'gray'
-                        linewidth = mm_to_pt(line_width_travel)
-                    
-                    # Extrahiere Koordinaten
-                    moves = prev_block['moves']
-                    xs = [m['x'] for m in moves]
-                    ys = [m['y'] for m in moves]
-                    zs = [m['z'] for m in moves]
-                    
-                    # 3D Plot
-                    ax3d.plot(xs, ys, zs, color=color_3d, linewidth=linewidth, alpha=1.0)
-                    
-                    # 2D XY
-                    ax_xy.plot(xs, ys, color=color_2d, linewidth=linewidth, alpha=1.0)
-                    
-                    # 2D XZ
-                    ax_xz.plot(xs, zs, color=color_2d, linewidth=linewidth, alpha=1.0)
-                    
-                    # 2D YZ
-                    ax_yz.plot(ys, zs, color=color_2d, linewidth=linewidth, alpha=1.0)
-                    
+        # Einmalige Figure; pro Frame nur den nächsten Block ergänzen und Bild aus dem Canvas ziehen
+        fig = plt.figure(figsize=(16, 12), dpi=dpi)
 
-                
-                # 3D Axis setup
-                ax3d.set_xlabel('X (mm)')
-                ax3d.set_ylabel('Y (mm)')
-                ax3d.set_zlabel('Z (mm)')
-                ax3d.set_xlim(x_min, x_max)
-                ax3d.set_ylim(y_min, y_max)
-                ax3d.set_zlim(z_min, z_max)
-                ax3d.set_title(f'3D View - Block {block_idx + 1}/{len(blocks)}\nExtruder: {"AN" if block["extruder_on"] else "AUS"}')
-                ax3d.view_init(elev=20, azim=45)
-                
-                # 2D XY
-                ax_xy.set_xlabel('X (mm)')
-                ax_xy.set_ylabel('Y (mm)')
-                ax_xy.set_xlim(x_min, x_max)
-                ax_xy.set_ylim(y_min, y_max)
-                ax_xy.set_title('Draufsicht (X-Y)')
-                ax_xy.grid(True, alpha=0.3)
-                ax_xy.set_aspect('equal', adjustable='box')
-                
-                # 2D XZ
-                ax_xz.set_xlabel('X (mm)')
-                ax_xz.set_ylabel('Z (mm)')
-                ax_xz.set_xlim(x_min, x_max)
-                ax_xz.set_ylim(z_min, z_max)
-                ax_xz.set_title('Seitenansicht (X-Z)')
-                ax_xz.grid(True, alpha=0.3)
-                ax_xz.set_aspect('equal', adjustable='box')
-                
-                # 2D YZ
-                ax_yz.set_xlabel('Y (mm)')
-                ax_yz.set_ylabel('Z (mm)')
-                ax_yz.set_xlim(y_min, y_max)
-                ax_yz.set_ylim(z_min, z_max)
-                ax_yz.set_title('Seitenansicht (Y-Z)')
-                ax_yz.grid(True, alpha=0.3)
-                ax_yz.set_aspect('equal', adjustable='box')
-                
-                fig.suptitle(
-                    f'Geo-Code Animation [{coord_label}] – Block {block_idx + 1} von {len(blocks)}',
-                    fontsize=14, fontweight='bold'
-                )
-                
-                # Speichere Frame als Datei
-                frame_file = os.path.join(temp_dir, f'frame_{block_idx:04d}.png')
-                fig.savefig(frame_file, dpi=dpi, bbox_inches='tight')
-                frames.append(frame_file)
-                
-                plt.close(fig)
-            
-            # Lade Bilder und speichere als GIF
-            print(f"\nSpeichere GIF mit {len(frames)} Frames...")
-            frame_duration = int(1000 / fps)
-            
-            from PIL import Image
-            images = [Image.open(f) for f in frames]
+        # 3D Subplot
+        ax3d = fig.add_subplot(2, 2, 1, projection='3d')
+
+        # 2D Subplots
+        ax_xy = fig.add_subplot(2, 2, 2)
+        ax_xz = fig.add_subplot(2, 2, 3)
+        ax_yz = fig.add_subplot(2, 2, 4)
+
+        # Statisches Axis-Setup
+        ax3d.set_xlabel('X (mm)')
+        ax3d.set_ylabel('Y (mm)')
+        ax3d.set_zlabel('Z (mm)')
+        ax3d.set_xlim(x_min, x_max)
+        ax3d.set_ylim(y_min, y_max)
+        ax3d.set_zlim(z_min, z_max)
+        ax3d.view_init(elev=20, azim=45)
+
+        ax_xy.set_xlabel('X (mm)')
+        ax_xy.set_ylabel('Y (mm)')
+        ax_xy.set_xlim(x_min, x_max)
+        ax_xy.set_ylim(y_min, y_max)
+        ax_xy.set_title('Draufsicht (X-Y)')
+        ax_xy.grid(True, alpha=0.3)
+        ax_xy.set_aspect('equal', adjustable='box')
+
+        ax_xz.set_xlabel('X (mm)')
+        ax_xz.set_ylabel('Z (mm)')
+        ax_xz.set_xlim(x_min, x_max)
+        ax_xz.set_ylim(z_min, z_max)
+        ax_xz.set_title('Seitenansicht (X-Z)')
+        ax_xz.grid(True, alpha=0.3)
+        ax_xz.set_aspect('equal', adjustable='box')
+
+        ax_yz.set_xlabel('Y (mm)')
+        ax_yz.set_ylabel('Z (mm)')
+        ax_yz.set_xlim(y_min, y_max)
+        ax_yz.set_ylim(z_min, z_max)
+        ax_yz.set_title('Seitenansicht (Y-Z)')
+        ax_yz.grid(True, alpha=0.3)
+        ax_yz.set_aspect('equal', adjustable='box')
+
+        from PIL import Image
+        for block_idx, prep in enumerate(prepared_blocks):
+            # Zeige Fortschritt
+            if (block_idx + 1) % max(1, len(prepared_blocks) // 10) == 0:
+                print(f"  Frame {block_idx + 1}/{len(prepared_blocks)}")
+
+            coords = prep['coords']
+            color = prep['color']
+            linewidth = prep['linewidth']
+
+            xs = coords[:, 0]
+            ys = coords[:, 1]
+            zs = coords[:, 2]
+
+            # Nur neuen Block hinzufügen (kumulative Darstellung entsteht automatisch)
+            ax3d.plot(xs, ys, zs, color=color, linewidth=linewidth, alpha=1.0)
+            ax_xy.plot(xs, ys, color=color, linewidth=linewidth, alpha=1.0)
+            ax_xz.plot(xs, zs, color=color, linewidth=linewidth, alpha=1.0)
+            ax_yz.plot(ys, zs, color=color, linewidth=linewidth, alpha=1.0)
+
+            ax3d.set_title(
+                f'3D View - Block {block_idx + 1}/{len(prepared_blocks)}\nExtruder: {"AN" if prep["extruder_on"] else "AUS"}'
+            )
+            fig.suptitle(
+                f'Geo-Code Animation [{coord_label}] – Block {block_idx + 1} von {len(prepared_blocks)}',
+                fontsize=14, fontweight='bold'
+            )
+
+            fig.canvas.draw()
+            frame = np.asarray(fig.canvas.buffer_rgba(), dtype=np.uint8)[..., :3].copy()
+            frames.append(Image.fromarray(frame))
+
+        plt.close(fig)
+
+        # Speichere GIF/TIFF
+        print(f"\nSpeichere GIF mit {len(frames)} Frames...")
+        frame_duration = int(1000 / fps)
+        images = frames
+        if images:
             images[0].save(
                 output_file,
                 save_all=True,
@@ -399,40 +379,50 @@ class GeoCodeVisualizer:
                 last_image_file = output_file.replace('.gif', '_final.png')
                 images[-1].save(last_image_file)
                 print(f"✓ Finales Bild gespeichert: {last_image_file}")
-        
-        finally:
-            # Cleanup
-            import shutil
-            shutil.rmtree(temp_dir, ignore_errors=True)
     
     
     def create_statistics(self) -> Dict:
         """Erstellt Statistiken über den Druckprozess"""
         moves = [cmd for cmd in self.commands if cmd['type'] == 'move']
+        if not moves:
+            return {
+                'Gesamt_Befehle': 0,
+                'Extruder_AN_Befehle': 0,
+                'Extruder_AUS_Befehle': 0,
+                'Gesamt_Bloecke': 0,
+                'Druck_Bloecke': 0,
+                'Fahr_Bloecke': 0,
+                'Druck_zu_Fahrt_Verhaeltnis': '0.0%',
+                'X_Bereich': '0.00 bis 0.00 (Spanne: 0.00 mm)',
+                'Y_Bereich': '0.00 bis 0.00 (Spanne: 0.00 mm)',
+                'Z_Bereich': '0.00 bis 0.00 (Spanne: 0.00 mm)',
+            }
         
-        on_moves = [m for m in moves if m['extruder_on']]
-        off_moves = [m for m in moves if not m['extruder_on']]
+        extruder_mask = np.array([m['extruder_on'] for m in moves], dtype=bool)
+        coords = np.array([[m['x'], m['y'], m['z']] for m in moves], dtype=float)
+
+        on_count = int(np.count_nonzero(extruder_mask))
+        off_count = len(moves) - on_count
         
         blocks = self.get_blocks()
         on_blocks = [b for b in blocks if b['extruder_on']]
         off_blocks = [b for b in blocks if not b['extruder_on']]
-        
-        # Berechne räumliche Statistiken
-        all_x = [m['x'] for m in moves]
-        all_y = [m['y'] for m in moves]
-        all_z = [m['z'] for m in moves]
+
+        mins = np.min(coords, axis=0)
+        maxs = np.max(coords, axis=0)
+        spans = maxs - mins
         
         stats = {
             'Gesamt_Befehle': len(moves),
-            'Extruder_AN_Befehle': len(on_moves),
-            'Extruder_AUS_Befehle': len(off_moves),
+            'Extruder_AN_Befehle': on_count,
+            'Extruder_AUS_Befehle': off_count,
             'Gesamt_Bloecke': len(blocks),
             'Druck_Bloecke': len(on_blocks),
             'Fahr_Bloecke': len(off_blocks),
-            'Druck_zu_Fahrt_Verhaeltnis': f"{len(on_moves) / len(moves) * 100:.1f}%",
-            'X_Bereich': f"{min(all_x):.2f} bis {max(all_x):.2f} (Spanne: {max(all_x) - min(all_x):.2f} mm)",
-            'Y_Bereich': f"{min(all_y):.2f} bis {max(all_y):.2f} (Spanne: {max(all_y) - min(all_y):.2f} mm)",
-            'Z_Bereich': f"{min(all_z):.2f} bis {max(all_z):.2f} (Spanne: {max(all_z) - min(all_z):.2f} mm)",
+            'Druck_zu_Fahrt_Verhaeltnis': f"{on_count / len(moves) * 100:.1f}%",
+            'X_Bereich': f"{mins[0]:.2f} bis {maxs[0]:.2f} (Spanne: {spans[0]:.2f} mm)",
+            'Y_Bereich': f"{mins[1]:.2f} bis {maxs[1]:.2f} (Spanne: {spans[1]:.2f} mm)",
+            'Z_Bereich': f"{mins[2]:.2f} bis {maxs[2]:.2f} (Spanne: {spans[2]:.2f} mm)",
         }
         
         return stats

@@ -10,8 +10,8 @@ Düse beim Rotieren denselben Punkt berührt.
 """
 
 # Ein-/Ausgabe
-INPUT_PATH = 'output_trajektorie/Kegel_v3.txt'
-OUTPUT_PATH = 'output_geo_code/Kegel_v3_space.geo'
+INPUT_PATH = 'output_trajektorie/Kegel_v4.txt'
+OUTPUT_PATH = 'output_geo_code/Kegel_v4.geo'
 
 # Geschwindigkeitskonstante (mm/min)
 SPEED_CONSTANT = 50 * 60  # 8.4 mm/s -> 504 mm/min
@@ -29,7 +29,7 @@ BED_OFFSET_Z = -186.25046989
 # Offset zur Extruder-Position für Testzwecke
 TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
-TEST_OFFSET_Z = -20
+TEST_OFFSET_Z = 0 # -20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
 
 def strip_comments(line):
     return line.split(';')[0].strip()

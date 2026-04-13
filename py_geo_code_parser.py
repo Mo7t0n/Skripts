@@ -14,7 +14,7 @@ INPUT_PATH = 'output_trajektorie/Kegel_v4.txt'
 OUTPUT_PATH = 'output_geo_code/Kegel_v4.geo'
 
 # Geschwindigkeitskonstante (mm/min)
-SPEED_CONSTANT = 50 * 60  # 8.4 mm/s -> 504 mm/min
+SPEED_CONSTANT = 10 * 60  # 8.4 mm/s -> 504 mm/min
 
 # Maximale erlaubte Rotationen
 MAX_ROT_X = 20.0

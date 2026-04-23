@@ -31,8 +31,24 @@ TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
 TEST_OFFSET_Z = 0 # -20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
 
+# Extruder-Temperatur und temperaturabhängiger Z-Offset
+# Offset steigt linear von 0 mm bei 0 °C an: offset_z = TEMP_OFFSET_Z_SLOPE * EXTRUDER_TEMPERATURE
+EXTRUDER_TEMPERATURE = 220  # Extruder-Temperatur in °C
+TEMP_OFFSET_Z_SLOPE = 0.66 / 400  # Steigung: mm pro °C (Kalibrierwert vom Benutzer eintragen)
+
 def strip_comments(line):
     return line.split(';')[0].strip()
+
+def calculate_temp_offset_z(temperature, slope=TEMP_OFFSET_Z_SLOPE):
+    """
+    Berechnet den Z-Offset basierend auf der Extruder-Temperatur.
+    Lineare Kalibrierung: offset_z = slope * temperature
+    :param temperature: Extruder-Temperatur (°C)
+    :param slope: Steigung (mm/°C)
+    :return: Z-Offset in mm
+    """
+    return slope * temperature
+
 
 def parse_gcode_line(line):
     """
@@ -94,11 +110,15 @@ def compute_platform_pose(x, y, z, a, b, c, bed_offset_xyz=(-3.13421237, -9.7443
 
     return pos[0], pos[1], pos[2], euler[2], euler[1], euler[0]
 
-def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset=(-3.13421237, -9.74438965, -178.13481531), test_offset=(10.0, -1.5, 55.0)):
+def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset=(-3.13421237, -9.74438965, -178.13481531), test_offset=(10.0, -1.5, 55.0), extruder_temp=EXTRUDER_TEMPERATURE):
     """
     Wandelt Eingabe-Zeilen in Bewegungsbefehle um.
     Berechnet Plattformpositionen und begrenzt Rotationen.
     """
+    # Berechne temperaturabhängigen Z-Offset und kombiniere mit TEST_OFFSET_Z
+    temp_offset_z = calculate_temp_offset_z(extruder_temp)
+    adjusted_test_offset = (test_offset[0], test_offset[1], test_offset[2] + temp_offset_z)
+    
     custom_code = ['EXTRUDER_OFF','LA 0.0 0.0 -300.0 0.0 0.0 0.0']  # Startpose
     custom_ende_code = ''
     last_speed = None
@@ -154,7 +174,7 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
             rot_z = np.clip(curr_c, -max_rot_z, max_rot_z)
 
             px, py, pz, pa, pb, pc = compute_platform_pose(
-                curr_x, curr_y, curr_z, rot_x, rot_y, rot_z, bed_offset, test_offset
+                curr_x, curr_y, curr_z, rot_x, rot_y, rot_z, bed_offset, adjusted_test_offset
             )
 
             custom_code.append(f'LA {px:.5f} {py:.5f} {pz:.5f} {pa:.5f} {pb:.5f} {pc:.5f}')
@@ -168,11 +188,11 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
     return custom_code, total_distance
 
 
-def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset, speed_constant=SPEED_CONSTANT):
+def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset, extruder_temp=EXTRUDER_TEMPERATURE, speed_constant=SPEED_CONSTANT):
     with open(input_filename, 'r') as infile:
         gcode_lines = infile.readlines()
 
-    custom_code, total_distance = convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset)
+    custom_code, total_distance = convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset, extruder_temp)
 
     total_time_min = total_distance / speed_constant
     hours = int(total_time_min // 60)
@@ -196,5 +216,6 @@ if __name__ == '__main__':
         MAX_ROT_Y,
         MAX_ROT_Z,
         BED_OFFSET,
-        TEST_OFFSET
+        TEST_OFFSET,
+        EXTRUDER_TEMPERATURE
     )

@@ -32,10 +32,106 @@ S_X_OFFSET    = 30.0    # Mindestabstand zwischen letzter Linie und S-Kurve (mm)
 S_AMPLITUDE   = 35.0    # Amplitude der S-Kurve in X-Richtung (mm)
 S_SPACING_MIN = 1.0     # Minimaler Bogenpunktabstand am Anfang der S-Kurve (mm)
 S_SPACING_MAX = 5.0     # Maximaler Bogenpunktabstand am Ende der S-Kurve (mm)
+
+# ── Parameter für Rechteck-Treppenmuster ──────────────────────────────────────
+RECT_SIZE     = 40.0    # Größe des Rechtecks (±rect_size in X und Y) (mm)
+LINE_WIDTH    = 5.0     # Breite der Drucklinien (mm)
+RECT_NUM_STEPS = 5      # Anzahl der Treppenstufen
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fmt(x, y, z, rx=0.0, ry=0.0, rz=0.0):
     return f"LA {x:.5f} {y:.5f} {z:.5f} {rx:.5f} {ry:.5f} {rz:.5f}"
+
+def draw_filled_rectangle(lines, x_min, x_max, y_min, y_max, z, line_width):
+    """Zeichnet ein gefülltes Rechteck mit Rahmen und Zickzack-Füllung.
+
+    lines: Liste, zu der die Befehle hinzugefügt werden
+    x_min, x_max, y_min, y_max: Rechteck-Grenzen
+    z: Höhe zum Drucken
+    line_width: Breite der Drucklinien für innere Füllung
+    """
+    # Fahrt zur Startposition
+    lines.append(fmt(x_min, y_min, z - TRAVEL_HEIGHT))  # Fahrhöhe (20mm unter z)
+    lines.append(fmt(x_min, y_min, z))
+    lines.append("EXTRUDER_ON")
+
+    # Rechteck-Rahmen
+    lines.append(fmt(x_max, y_min, z))  # Unten
+    lines.append(fmt(x_max, y_max, z))  # Rechts
+    lines.append(fmt(x_min, y_max, z))  # Oben
+    lines.append(fmt(x_min, y_min, z))  # Links
+
+    lines.append("EXTRUDER_OFF")
+    lines.append(fmt(x_min, y_min, z - TRAVEL_HEIGHT))
+
+    # Innere Füllung
+    x_inner_min = x_min + line_width
+    x_inner_max = x_max - line_width
+    y_inner_min = y_min + line_width
+    y_inner_max = y_max - line_width
+
+    lines.append(fmt(x_inner_min, y_inner_min, z - TRAVEL_HEIGHT))
+    lines.append(fmt(x_inner_min, y_inner_min, z))
+    lines.append("EXTRUDER_ON")
+
+    # Horizontale Fülllinien mit Zickzack
+    y = y_inner_min
+    going_right = True
+
+    while y <= y_inner_max:
+        if going_right:
+            lines.append(fmt(x_inner_max, y, z))
+        else:
+            lines.append(fmt(x_inner_min, y, z))
+
+        y += line_width
+        if y <= y_inner_max:
+            # U-förmiger Übergang zur nächsten Linie
+            lines.append(fmt(x_inner_max if going_right else x_inner_min, y, z))
+            lines.append(fmt(x_inner_min if going_right else x_inner_max, y, z))
+            lines.append(fmt(x_inner_min if going_right else x_inner_max, y, z))
+            going_right = not going_right
+
+    lines.append("EXTRUDER_OFF")
+    lines.append(fmt(x_inner_min, y_inner_min, z - TRAVEL_HEIGHT))
+
+
+def generate_rectangle_stairs(output_file, rect_size=RECT_SIZE, line_width=LINE_WIDTH,
+                             step_height=LINE_HEIGHT, num_steps=RECT_NUM_STEPS):
+    """Generiert ein Rechteck mit Linienfüllung und Treppenstufen in einer Ecke.
+    """
+    temp_offset_z = calculate_temp_offset_z(EXTRUDER_TEMPERATURE)
+    z_print = - LINE_HEIGHT - temp_offset_z
+    z_travel = - TRAVEL_HEIGHT - temp_offset_z
+
+    lines = []
+
+    # Startposition
+    lines.append("EXTRUDER_OFF")
+    lines.append("LA 0.0 0.0 -300.0 0.0 0.0 0.0")
+
+    x_min, x_max = -rect_size, rect_size
+    y_min, y_max = -rect_size, rect_size
+
+    # ── Erste Schicht (volle Größe) ────────────────────────────────────────
+    draw_filled_rectangle(lines, x_min, x_max, y_min, y_max, z_print, line_width)
+
+    # ── Mehrere Schichten mit Treppenmuster in Ecke ────────────────────────────
+    for layer in range(2, num_steps + 2):
+        z_layer = - layer * step_height - temp_offset_z
+
+        # Rechteck wird in dieser Ecke kleiner (oben rechts)
+        reduction = layer * (x_max - (x_min + line_width)) / (num_steps + 1)
+        x_layer_max = x_max - reduction
+        y_layer_max = y_max - reduction
+        x_layer_min = x_min + line_width
+        y_layer_min = y_min + line_width
+
+        draw_filled_rectangle(lines, x_layer_min, x_layer_max, y_layer_min, y_layer_max, z_layer, line_width)
+
+    with open(output_file, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+
 
 def s_curve_points(y_start, y_end, amplitude, spacing_min, spacing_max):
     """Erzeugt Punkte einer S-Kurve (zwei halbe Sinusbögen) mit variablem Abstand.
@@ -131,3 +227,8 @@ def generate():
 
 if __name__ == '__main__':
     generate()
+    print(f'Extrusionstest generiert: {OUTPUT_PATH}')
+
+    rect_output = 'output_geo_code/Rechteck_Treppe_test.geo'
+    generate_rectangle_stairs(rect_output)
+    print(f'Rechteck-Treppenmuster generiert: {rect_output}')

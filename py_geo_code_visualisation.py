@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Ein-/Ausgabe
-INPUT_GEO_FILE = "output_geo_code/Kegel_v4.geo"   # Pfad zur .geo Datei (relativ zum Skript)
+INPUT_GEO_FILE = "output_geo_code/Rechteck_Treppe_test.geo"   # Pfad zur .geo Datei (relativ zum Skript)
 
 # Darstellungsmodus
 # 'platform'  → Plattform-Pose (Originalkoordinaten aus dem Geo-File)
@@ -33,7 +33,7 @@ DEFAULT_BED_OFFSET  = (-0.19494689, 0.40624396, -186.25046989)
 DEFAULT_TEST_OFFSET = (0.0, 0.0, 0.0)
 
 # Liniendicke (in mm)
-LINE_WIDTH_PRINT  = 5.0   # Liniendicke beim Drucken, in mm
+LINE_WIDTH_PRINT  = 1.0   # Liniendicke beim Drucken, in mm
 LINE_WIDTH_TRAVEL = 0.05  # Liniendicke bei Leerfahrten, in mm
 
 # GIF-Geschwindigkeit (Frames pro Sekunde): höher = schneller, niedriger = langsamer

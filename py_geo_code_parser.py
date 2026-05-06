@@ -33,7 +33,7 @@ TEST_OFFSET_Z = 0 # -20 für Testzwecke, damit die Düse nicht auf dem Bett schl
 
 # Extruder-Temperatur und temperaturabhängiger Z-Offset
 # Offset steigt linear von 0 mm bei 0 °C an: offset_z = TEMP_OFFSET_Z_SLOPE * EXTRUDER_TEMPERATURE
-EXTRUDER_TEMPERATURE = 220  # Extruder-Temperatur in °C
+EXTRUDER_TEMPERATURE = 200  # Extruder-Temperatur in °C
 TEMP_OFFSET_Z_SLOPE = 0.66 / 400  # Steigung: mm pro °C (Kalibrierwert vom Benutzer eintragen)
 
 def strip_comments(line):
@@ -117,7 +117,7 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
     """
     # Berechne temperaturabhängigen Z-Offset und kombiniere mit TEST_OFFSET_Z
     temp_offset_z = calculate_temp_offset_z(extruder_temp)
-    adjusted_test_offset = (test_offset[0], test_offset[1], test_offset[2] + temp_offset_z)
+    adjusted_test_offset = (test_offset[0], test_offset[1], test_offset[2] - temp_offset_z)
     
     custom_code = ['EXTRUDER_OFF','LA 0.0 0.0 -300.0 0.0 0.0 0.0']  # Startpose
     custom_ende_code = ''

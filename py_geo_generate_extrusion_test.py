@@ -18,6 +18,8 @@ Parameter:
 
 OUTPUT_PATH = 'output_geo_code/Extrusionstest.geo'
 
+from py_geo_code_parser import calculate_temp_offset_z, EXTRUDER_TEMPERATURE
+
 # ── Parameter ────────────────────────────────────────────────────────────────
 LINE_HEIGHT   = 1.0     # Höhe der Drucklinien über dem Druckbett (mm)
 TRAVEL_HEIGHT = 20.0    # Fahrhöhe zwischen den Linien (mm)
@@ -64,8 +66,9 @@ def s_curve_points(y_start, y_end, amplitude, spacing_min, spacing_max):
 
 
 def generate():
-    z_print  = -LINE_HEIGHT
-    z_travel = -TRAVEL_HEIGHT
+    temp_offset_z = calculate_temp_offset_z(EXTRUDER_TEMPERATURE)
+    z_print  = -LINE_HEIGHT - temp_offset_z
+    z_travel = -TRAVEL_HEIGHT - temp_offset_z
     y_start  = -LINE_LENGTH / 2.0
     y_end    =  LINE_LENGTH / 2.0
 

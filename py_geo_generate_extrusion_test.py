@@ -19,7 +19,7 @@ Parameter:
 OUTPUT_PATH = 'output_geo_code/Extrusionstest.geo'
 
 # ── Parameter ────────────────────────────────────────────────────────────────
-LINE_HEIGHT   = 5.0     # Höhe der Drucklinien über dem Druckbett (mm)
+LINE_HEIGHT   = 1.0     # Höhe der Drucklinien über dem Druckbett (mm)
 TRAVEL_HEIGHT = 20.0    # Fahrhöhe zwischen den Linien (mm)
 LINE_LENGTH   = 200.0   # Länge jeder Linie in mm
 LINE_SPACING  = 30.0    # Abstand zwischen den Linien (mm)

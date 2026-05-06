@@ -117,8 +117,8 @@ def generate_rectangle_stairs(output_file, rect_size=RECT_SIZE, line_width=LINE_
     draw_filled_rectangle(lines, x_min, x_max, y_min, y_max, z_print, line_width)
 
     # ── Mehrere Schichten mit Treppenmuster in Ecke ────────────────────────────
-    for layer in range(2, num_steps + 2):
-        z_layer = - layer * step_height - temp_offset_z
+    for layer in range(1, num_steps + 1):
+        z_layer = - (layer + 1) * step_height - temp_offset_z
 
         # Rechteck wird in dieser Ecke kleiner (oben rechts)
         reduction = layer * (x_max - (x_min + line_width)) / (num_steps + 1)

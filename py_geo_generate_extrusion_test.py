@@ -21,7 +21,7 @@ OUTPUT_PATH = 'output_geo_code/Extrusionstest.geo'
 from py_geo_code_parser import calculate_temp_offset_z, EXTRUDER_TEMPERATURE
 
 # ── Parameter ────────────────────────────────────────────────────────────────
-LINE_HEIGHT   = 3     # Höhe der Drucklinien über dem Druckbett (mm)
+LINE_HEIGHT   = 2.5     # Höhe der Drucklinien über dem Druckbett (mm)
 TRAVEL_HEIGHT = 20.0    # Fahrhöhe zwischen den Linien (mm)
 LINE_LENGTH   = 200.0   # Länge jeder Linie in mm
 LINE_SPACING  = 20.0    # Abstand zwischen den Linien (mm)

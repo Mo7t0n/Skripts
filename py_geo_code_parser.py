@@ -10,8 +10,8 @@ Düse beim Rotieren denselben Punkt berührt.
 """
 
 # Ein-/Ausgabe
-INPUT_PATH = 'output_trajektorie/Kegel_v5.txt'
-OUTPUT_PATH = 'output_geo_code/Kegel_v5.geo'
+INPUT_PATH = 'output_trajektorie/Kegel_v6_5x2.txt'
+OUTPUT_PATH = 'output_geo_code/Kegel_v6_5x2.geo'
 
 # Geschwindigkeitskonstante (mm/min)
 SPEED_CONSTANT = 4.2 * 60  # 8.4 mm/s -> 504 mm/min

@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Ein-/Ausgabe
-INPUT_GEO_FILE = "output_geo_code/Kegel_v5.geo"   # Pfad zur .geo Datei (relativ zum Skript)
+INPUT_GEO_FILE = "output_geo_code/Kegel_v6_5x2.geo"   # Pfad zur .geo Datei (relativ zum Skript)
 
 # Darstellungsmodus
 # 'platform'  → Plattform-Pose (Originalkoordinaten aus dem Geo-File)
@@ -304,12 +304,12 @@ class GeoCodeVisualizer:
         y_range = y_max - y_min if y_max != y_min else 1
         z_range = z_max - z_min if z_max != z_min else 1
         
-        x_min -= x_range * 0.1
-        x_max += x_range * 0.1
-        y_min -= y_range * 0.1
-        y_max += y_range * 0.1
-        z_min -= z_range * 0.1
-        z_max += z_range * 0.1
+        x_min -= x_range * 0.05
+        x_max += x_range * 0.05
+        y_min -= y_range * 0.05
+        y_max += y_range * 0.05
+        z_min -= z_range * 0.05
+        z_max += z_range * 0.05
 
         # Einheitliche 3D-Skalierung: alle Achsen erhalten dieselbe Spannweite.
         x_center = 0.5 * (x_min + x_max)
@@ -340,7 +340,7 @@ class GeoCodeVisualizer:
 
         # Einmalige Figure; 3D-Achse wird pro Frame neu gezeichnet (Painter's Sort),
         # 2D-Achsen bleiben inkrementell mit zorder.
-        fig = plt.figure(figsize=(16, 12), dpi=dpi)
+        fig = plt.figure(figsize=(20, 12), dpi=dpi)
 
         # 3D Subplot
         ax3d = fig.add_subplot(2, 2, 1, projection='3d')

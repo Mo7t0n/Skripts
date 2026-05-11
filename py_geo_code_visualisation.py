@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Ein-/Ausgabe
-INPUT_GEO_FILE = "output_geo_code/Kegel_v6_5x1_space.geo"   # Pfad zur .geo Datei (relativ zum Skript)
+INPUT_GEO_FILE = "output_geo_code/Kegel_v6_5x2.geo"   # Pfad zur .geo Datei (relativ zum Skript)
 
 # Darstellungsmodus
 # 'platform'  → Plattform-Pose (Originalkoordinaten aus dem Geo-File)
@@ -35,6 +35,11 @@ DEFAULT_TEST_OFFSET = (0.0, 0.0, 0.0)
 # Liniendicke (in mm)
 LINE_WIDTH_PRINT  = 1.0   # Liniendicke beim Drucken, in mm
 LINE_WIDTH_TRAVEL = 0.05  # Liniendicke bei Leerfahrten, in mm
+
+# Extrueder-Ausrichtungs-Pfeile
+SHOW_EXTRUDER_ORIENTATION_ARROWS = True
+ORIENTATION_ARROW_EVERY = 10   # jeden n-ten Punkt als Pfeil zeichnen
+ORIENTATION_ARROW_SCALE = 0.05 # Pfeillänge relativ zur Szenengröße
 
 # GIF-Geschwindigkeit (Frames pro Sekunde): höher = schneller, niedriger = langsamer
 GIF_FPS = 60
@@ -131,6 +136,24 @@ class GeoCodeVisualizer:
         a_ang = euler[2]
 
         return tool_tip[0], tool_tip[1], tool_tip[2], a_ang, b_ang, c_ang
+
+    @staticmethod
+    def _orientation_arrow_vectors(moves: List[Dict], sample_every: int = ORIENTATION_ARROW_EVERY) -> np.ndarray:
+        """Berechnet aus A/B/C die Ausrichtungs-Vektoren für Pfeile in der Visualisierung."""
+        arrow_points = []
+        for idx, move in enumerate(moves):
+            if sample_every > 1 and idx % sample_every != 0 and idx != len(moves) - 1:
+                continue
+            try:
+                R = Rotation.from_euler('ZYX', [move['c'], move['b'], move['a']], degrees=True)
+            except Exception:
+                continue
+            direction = R.apply(np.array([0.0, 0.0, 1.0]))
+            arrow_points.append([
+                move['x'], move['y'], move['z'],
+                float(direction[0]), float(direction[1]), float(direction[2])
+            ])
+        return np.array(arrow_points, dtype=float) if arrow_points else np.zeros((0, 6), dtype=float)
 
     def parse_file(self):
         """Parst die Geo-Code Datei und wendet ggf. Umkehrtransformation an."""
@@ -291,7 +314,8 @@ class GeoCodeVisualizer:
                 'zorder_xy': blend_depth(zorder_xy_centroid, zorder_xy_nearest),
                 'zorder_xz': blend_depth(zorder_xz_centroid, zorder_xz_nearest),
                 'zorder_yz': blend_depth(zorder_yz_centroid, zorder_yz_nearest),
-                # Tiefe relativ zur Kamera (wird später für Painter's-Sort in 3D gesetzt)
+                # Pfeile für Extruder-Auslenkung aus Euler-Winkeln
+                'arrow_points': self._orientation_arrow_vectors(moves),
                 'mean_xyz': mean_xyz,
             })
 
@@ -340,15 +364,16 @@ class GeoCodeVisualizer:
 
         # Einmalige Figure; 3D-Achse wird pro Frame neu gezeichnet (Painter's Sort),
         # 2D-Achsen bleiben inkrementell mit zorder.
-        fig = plt.figure(figsize=(20, 12), dpi=dpi)
+        fig = plt.figure(figsize=(24, 18), dpi=dpi)
+        gs = fig.add_gridspec(nrows=3, ncols=2, width_ratios=[2, 1], height_ratios=[1, 1, 1], hspace=0.30, wspace=0.25)
 
-        # 3D Subplot
-        ax3d = fig.add_subplot(2, 2, 1, projection='3d')
+        # 3D Subplot nimmt ganze linke Spalte ein
+        ax3d = fig.add_subplot(gs[:, 0], projection='3d')
 
-        # 2D Subplots
-        ax_xy = fig.add_subplot(2, 2, 2)
-        ax_xz = fig.add_subplot(2, 2, 3)
-        ax_yz = fig.add_subplot(2, 2, 4)
+        # 2D Subplots in der rechten Spalte, gleich groß und übereinander gestapelt
+        ax_xy = fig.add_subplot(gs[0, 1])
+        ax_xz = fig.add_subplot(gs[1, 1])
+        ax_yz = fig.add_subplot(gs[2, 1])
 
         ELEV, AZIM = CAMERA_ELEV_DEG, CAMERA_AZIM_DEG
 
@@ -368,30 +393,33 @@ class GeoCodeVisualizer:
         # Statisches Axis-Setup
         _setup_ax3d(ax3d)
 
+        def _set_equal_2d_limits(ax, x_lo, x_hi, y_lo, y_hi):
+            """Setzt für eine 2D-Achse gleiche Einheiten per erweiterten Gleichbereich."""
+            x_center = 0.5 * (x_lo + x_hi)
+            y_center = 0.5 * (y_lo + y_hi)
+            half_span = 0.5 * max(x_hi - x_lo, y_hi - y_lo, 1e-9)
+            ax.set_xlim(x_center - half_span, x_center + half_span)
+            ax.set_ylim(y_center - half_span, y_center + half_span)
+            ax.set_aspect('equal', adjustable='box')
+
         ax_xy.set_xlabel('X (mm)')
         ax_xy.set_ylabel('Y (mm)')
-        ax_xy.set_xlim(x_min, x_max)
-        ax_xy.set_ylim(y_min, y_max)
+        _set_equal_2d_limits(ax_xy, x_min, x_max, y_min, y_max)
         ax_xy.set_title('Draufsicht (X-Y)')
         ax_xy.grid(True, alpha=0.3)
-        ax_xy.set_aspect('equal', adjustable='box')
 
         ax_xz.set_xlabel('X (mm)')
         ax_xz.set_ylabel('Z (mm)')
-        ax_xz.set_xlim(x_min, x_max)
-        ax_xz.set_ylim(z_min, z_max)
+        _set_equal_2d_limits(ax_xz, x_min, x_max, z_min, z_max)
         ax_xz.set_title('Seitenansicht (X-Z)')
         ax_xz.grid(True, alpha=0.3)
-        ax_xz.set_aspect('equal', adjustable='box')
         ax_xz.invert_xaxis()
 
         ax_yz.set_xlabel('Y (mm)')
         ax_yz.set_ylabel('Z (mm)')
-        ax_yz.set_xlim(y_min, y_max)
-        ax_yz.set_ylim(z_min, z_max)
+        _set_equal_2d_limits(ax_yz, y_min, y_max, z_min, z_max)
         ax_yz.set_title('Seitenansicht (Y-Z)')
         ax_yz.grid(True, alpha=0.3)
-        ax_yz.set_aspect('equal', adjustable='box')
         ax_yz.invert_xaxis()
 
         seq_to_block = {pb['seq_idx']: pb for pb in prepared_blocks}
@@ -420,6 +448,17 @@ class GeoCodeVisualizer:
                     color=pb['color'], linewidth=pb['linewidth'], alpha=1.0,
                     zorder=pb['zorder_yz'], visible=False
                 )[0]
+                if SHOW_EXTRUDER_ORIENTATION_ARROWS and pb['arrow_points'].shape[0] > 0:
+                    arrows = pb['arrow_points']
+                    pb['arrow_3d'] = ax3d.quiver(
+                        arrows[:, 0], arrows[:, 1], arrows[:, 2],
+                        arrows[:, 3], arrows[:, 4], arrows[:, 5],
+                        length=max(1.0, min(x_range, y_range, z_range) * ORIENTATION_ARROW_SCALE),
+                        normalize=True, color='black', alpha=0.7, linewidth=0.5,
+                        visible=False
+                    )
+                else:
+                    pb['arrow_3d'] = None
 
         from PIL import Image
         last_visible_seq = -1
@@ -440,6 +479,8 @@ class GeoCodeVisualizer:
                     pb['artist_xy'].set_visible(True)
                     pb['artist_xz'].set_visible(True)
                     pb['artist_yz'].set_visible(True)
+                    if pb.get('arrow_3d') is not None:
+                        pb['arrow_3d'].set_visible(True)
                 last_visible_seq = block_idx
 
                 ax3d.set_title("3D-Ansicht")
@@ -461,6 +502,14 @@ class GeoCodeVisualizer:
                     c = pb['coords']
                     ax3d.plot(c[:, 0], c[:, 1], c[:, 2],
                               color=pb['color'], linewidth=pb['linewidth'], alpha=1.0)
+                    if SHOW_EXTRUDER_ORIENTATION_ARROWS and pb['arrow_points'].shape[0] > 0:
+                        arrows = pb['arrow_points']
+                        ax3d.quiver(
+                            arrows[:, 0], arrows[:, 1], arrows[:, 2],
+                            arrows[:, 3], arrows[:, 4], arrows[:, 5],
+                            length=max(1.0, min(x_range, y_range, z_range) * ORIENTATION_ARROW_SCALE),
+                            normalize=True, color='black', alpha=0.7, linewidth=0.5,
+                        )
 
                 # 2D: inkrementell mit zorder für korrekte Überlappung
                 # zorder steuert die Zeichenreihenfolge in den 2D-Ansichten:

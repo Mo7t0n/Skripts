@@ -11,7 +11,7 @@ Düse beim Rotieren denselben Punkt berührt.
 
 # Ein-/Ausgabe
 INPUT_PATH = 'output_trajektorie/Kegel_v6_5x1.txt'
-OUTPUT_PATH = 'output_geo_code/Kegel_v6_5x1_space.geo'
+OUTPUT_PATH = 'output_geo_code/Kegel_v6_5x1_pl.geo'
 
 # Geschwindigkeitskonstante (mm/min)
 SPEED_CONSTANT = 4.2 * 60  # 8.4 mm/s -> 504 mm/min
@@ -22,14 +22,14 @@ MAX_ROT_Y = 20.0
 MAX_ROT_Z = 15.0
 
 # Offset des Rotationszentrums
-BED_OFFSET_X = -0.19494689
-BED_OFFSET_Y = 0.40624396
-BED_OFFSET_Z = -186.25046989
+BED_OFFSET_X = 0.45643577 # -0.19494689
+BED_OFFSET_Y = 1.58638469 # 0.40624396
+BED_OFFSET_Z = -189.01789573 # -186.25046989
 
 # Offset zur Extruder-Position für Testzwecke
 TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
-TEST_OFFSET_Z = -5 # -20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
+TEST_OFFSET_Z = 0 # -20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
 
 # Extruder-Temperatur und temperaturabhängiger Z-Offset
 # Offset steigt linear von 0 mm bei 0 °C an: offset_z = TEMP_OFFSET_Z_SLOPE * EXTRUDER_TEMPERATURE
@@ -165,13 +165,13 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
             curr_x = components.get('X', curr_x)
             curr_y = components.get('Y', curr_y)
             curr_z = components.get('Z', curr_z)
-            curr_a = components.get('A', curr_a)
-            curr_b = components.get('B', curr_b)
-            curr_c = components.get('C', curr_c)
+            curr_a = 0 #components.get('A', curr_a)
+            curr_b = 0 #components.get('B', curr_b)
+            curr_c = 0 #components.get('C', curr_c)
 
-            rot_x = np.clip(-curr_a, -max_rot_x, max_rot_x)
-            rot_y = np.clip(-curr_b, -max_rot_y, max_rot_y)
-            rot_z = np.clip(-curr_c, -max_rot_z, max_rot_z)
+            rot_x = np.clip(curr_a, -max_rot_x, max_rot_x)
+            rot_y = np.clip(curr_b, -max_rot_y, max_rot_y)
+            rot_z = np.clip(curr_c, -max_rot_z, max_rot_z)
 
             px, py, pz, pa, pb, pc = compute_platform_pose(
                 curr_x, curr_y, curr_z, rot_x, rot_y, rot_z, bed_offset, adjusted_test_offset

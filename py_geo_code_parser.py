@@ -169,9 +169,9 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
             curr_b = components.get('B', curr_b)
             curr_c = components.get('C', curr_c)
 
-            rot_x = np.clip(curr_a, -max_rot_x, max_rot_x)
-            rot_y = np.clip(curr_b, -max_rot_y, max_rot_y)
-            rot_z = np.clip(curr_c, -max_rot_z, max_rot_z)
+            rot_x = np.clip(-curr_a, -max_rot_x, max_rot_x)
+            rot_y = np.clip(-curr_b, -max_rot_y, max_rot_y)
+            rot_z = np.clip(-curr_c, -max_rot_z, max_rot_z)
 
             px, py, pz, pa, pb, pc = compute_platform_pose(
                 curr_x, curr_y, curr_z, rot_x, rot_y, rot_z, bed_offset, adjusted_test_offset

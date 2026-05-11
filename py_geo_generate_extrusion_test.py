@@ -16,12 +16,10 @@ Parameter:
     S_SPACING_MAX   – Maximaler Punktabstand auf der S-Kurve (mm)
 """
 
-OUTPUT_PATH = 'output_geo_code/Extrusionstest.geo'
-
 from py_geo_code_parser import calculate_temp_offset_z, EXTRUDER_TEMPERATURE
 
 # ── Parameter ────────────────────────────────────────────────────────────────
-LINE_HEIGHT   = 2.5     # Höhe der Drucklinien über dem Druckbett (mm)
+LINE_HEIGHT   = 1.0     # Höhe der Drucklinien über dem Druckbett (mm)
 TRAVEL_HEIGHT = 20.0    # Fahrhöhe zwischen den Linien (mm)
 LINE_LENGTH   = 200.0   # Länge jeder Linie in mm
 LINE_SPACING  = 20.0    # Abstand zwischen den Linien (mm)
@@ -32,6 +30,15 @@ S_X_OFFSET    = 30.0    # Mindestabstand zwischen letzter Linie und S-Kurve (mm)
 S_AMPLITUDE   = 35.0    # Amplitude der S-Kurve in X-Richtung (mm)
 S_SPACING_MIN = 1.0     # Minimaler Bogenpunktabstand am Anfang der S-Kurve (mm)
 S_SPACING_MAX = 5.0     # Maximaler Bogenpunktabstand am Ende der S-Kurve (mm)
+
+
+def _format_param_value_for_filename(value):
+    text = f"{value:.2f}" if isinstance(value, float) else str(value)
+    text = text.rstrip('0').rstrip('.')
+    return text.replace('.', '_')
+
+OUTPUT_PATH = f"output_geo_code/Extrusionstest_{_format_param_value_for_filename(LINE_HEIGHT)}mm.geo"
+RECT_OUTPUT_PATH = f"output_geo_code/Rechteck_Treppe_test_{_format_param_value_for_filename(LINE_HEIGHT)}mm.geo"
 
 # ── Parameter für Rechteck-Treppenmuster ──────────────────────────────────────
 RECT_SIZE     = 40.0    # Größe des Rechtecks (±rect_size in X und Y) (mm)
@@ -229,6 +236,5 @@ if __name__ == '__main__':
     generate()
     print(f'Extrusionstest generiert: {OUTPUT_PATH}')
 
-    rect_output = 'output_geo_code/Rechteck_Treppe_test.geo'
-    generate_rectangle_stairs(rect_output)
-    print(f'Rechteck-Treppenmuster generiert: {rect_output}')
+    generate_rectangle_stairs(RECT_OUTPUT_PATH)
+    print(f'Rechteck-Treppenmuster generiert: {RECT_OUTPUT_PATH}')

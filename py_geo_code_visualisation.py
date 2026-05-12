@@ -8,13 +8,13 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Ein-/Ausgabe
-INPUT_GEO_FILE = "output_geo_code/Kegel_v6_5x2.geo"   # Pfad zur .geo Datei (relativ zum Skript)
+INPUT_GEO_FILE = "output_geo_code/Kegel_v6_5x1_pl.geo"   # Pfad zur .geo Datei (relativ zum Skript)
 
 # Darstellungsmodus
 # 'platform'  → Plattform-Pose (Originalkoordinaten aus dem Geo-File)
 # 'toolpath'  → Werkzeugbahn / Düsenposition (Umkehrtransformation)
 # 'both'      → beide Modi nacheinander
-VISUALIZE_MODE = 'toolpath'
+VISUALIZE_MODE = 'both'
 
 # Kamera der 3D-Ansicht (Grad)
 CAMERA_ELEV_DEG = 20
@@ -29,7 +29,7 @@ DEPTH_WEIGHT_CENTROID = 0.7
 DEPTH_WEIGHT_NEAREST = 0.3
 
 # Standard-Offsets aus py_geo_code_parser.py
-DEFAULT_BED_OFFSET  = (-0.19494689, 0.40624396, -186.25046989)
+DEFAULT_BED_OFFSET  = (0.45643577, 1.58638469, -160.01789573)
 DEFAULT_TEST_OFFSET = (0.0, 0.0, 0.0)
 
 # Liniendicke (in mm)
@@ -43,6 +43,9 @@ ORIENTATION_ARROW_SCALE = 0.05 # Pfeillänge relativ zur Szenengröße
 
 # GIF-Geschwindigkeit (Frames pro Sekunde): höher = schneller, niedriger = langsamer
 GIF_FPS = 60
+
+# TIFF-Ausgabe steuern
+SAVE_TIFF = False
 
 # Zufallsfarben für Druckblöcke
 # Ganzzahl → reproduzierbare Farben; None → bei jedem Start neue Farben
@@ -100,42 +103,39 @@ class GeoCodeVisualizer:
     @staticmethod
     def compute_toolpath_pose(px: float, py: float, pz: float,
                               pa: float, pb: float, pc: float,
-                              bed_offset: np.ndarray,
-                              test_offset: np.ndarray) -> Tuple:
+                              bed_offset: np.ndarray) -> Tuple:
         """
         Umkehrung von compute_platform_pose aus py_geo_code_parser.py.
 
-        Im geo-File gespeicherte Plattform-Pose:
-          pa = euler[2] (X-Achse), pb = euler[1] (Y), pc = euler[0] (Z)
-          → Rotation.from_euler('ZYX', [pc, pb, pa])
-
-        Vorwärts-Transformation war:
-          T_nozzle  = [R_nozzle | new_nozzle_pos]
-          T_platform = inv(T_nozzle)
-
-        Rückwärts:
-          T_nozzle = inv(T_platform)
-          new_nozzle_pos = -R_plat^T @ [px,py,pz]
-          tool_tip = new_nozzle_pos + bed_offset
-                     - R_nozzle.apply(bed_offset) + test_offset
+        Gegeben: Plattform-Pose (px, py, pz, pa, pb, pc)
+        Gesucht: Düsen-Pose (x, y, z, a, b, c)
+        
+        Parser-Formel:
+            R_B = Rotation.from_euler('ZYX', [c, b, a])
+            R_H = R_B.inv()  
+            dx_hexapod = R_H.apply(bed_offset) - R_H.apply(dx_buildspace) - bed_offset
+        
+        Umkehrung:
+            R_H.apply(dx_buildspace) = R_H.apply(bed_offset) - dx_hexapod - bed_offset
+            dx_buildspace = R_H.inv().apply(R_H.apply(bed_offset) - dx_hexapod - bed_offset)
         """
-        # Plattform-Rotation aus gespeicherten Euler-Winkeln (ZYX: [pc, pb, pa])
-        R_plat = Rotation.from_euler('ZYX', [pc, pb, pa], degrees=True)
+        # Plattform-Rotation aus Euler-Winkeln
+        R_H = Rotation.from_euler('xyz', [pa, pb, pc], degrees=True)
+        
+        # Düsen-Rotation (Inverse der Plattform-Rotation)
+        R_B = R_H.inv()
+        
+        # Plattform-Position
+        dx_hexapod = np.array([px, py, pz])
+        
+        # Umkehrung der Formel nach dx_buildspace
+        temp = R_H.apply(bed_offset) - dx_hexapod - bed_offset
+        dx_buildspace = R_B.apply(temp)
+        
+        # Düsen-Rotation als Euler-Winkel (ZYX: [c, b, a])
+        euler_zyx = R_B.as_euler('ZYX', degrees=True)
 
-        # T_nozzle = inv(T_platform)  →  R_nozzle = R_plat^-1,  t_nozzle = -R_plat^T @ t_platform
-        R_nozzle = R_plat.inv()
-        new_nozzle_pos = -(R_plat.as_matrix().T @ np.array([px, py, pz]))
-
-        # Werkzeugspitze zurückrechnen
-        tool_tip = new_nozzle_pos + bed_offset - R_nozzle.apply(bed_offset) + test_offset
-
-        # Winkel der Düse zurückrechnen: R = from_euler('ZYX', [c, b, a])
-        euler = R_nozzle.as_euler('ZYX', degrees=True)  # [Z, Y, X]
-        c_ang = euler[0]
-        b_ang = euler[1]
-        a_ang = euler[2]
-
-        return tool_tip[0], tool_tip[1], tool_tip[2], a_ang, b_ang, c_ang
+        return dx_buildspace[0], dx_buildspace[1], dx_buildspace[2], euler_zyx[2], euler_zyx[1], euler_zyx[0]
 
     @staticmethod
     def _orientation_arrow_vectors(moves: List[Dict], sample_every: int = ORIENTATION_ARROW_EVERY) -> np.ndarray:
@@ -174,34 +174,34 @@ class GeoCodeVisualizer:
                 elif line.startswith('LA'):
                     # Linear Axis Befehl: LA x y z a b c
                     parts = line.split()
-                    if len(parts) >= 4:
-                        try:
-                            x = float(parts[1])
-                            y = float(parts[2])
-                            z = float(parts[3])
-                            a = float(parts[4]) if len(parts) > 4 else 0.0
-                            b = float(parts[5]) if len(parts) > 5 else 0.0
-                            c = float(parts[6]) if len(parts) > 6 else 0.0
+                    try:
+                        geo_x = float(parts[1])
+                        geo_y = float(parts[2])
+                        geo_z = float(parts[3])
+                        geo_a = float(parts[4]) if len(parts) > 4 else 0.0
+                        geo_b = float(parts[5]) if len(parts) > 5 else 0.0
+                        geo_c = float(parts[6]) if len(parts) > 6 else 0.0
 
-                            # Umkehrtransformation: Plattform-Pose → Düsenposition
-                            if self.as_toolpath:
-                                x, y, z, a, b, c = self.compute_toolpath_pose(
-                                    x, y, z, a, b, c,
-                                    self.bed_offset, self.test_offset
-                                )
-
-                            self.commands.append({
-                                'type': 'move',
-                                'x': x,
-                                'y': y,
-                                'z': z,
-                                'a': a,
-                                'b': b,
-                                'c': c,
-                                'extruder_on': self.extruder_state,
-                            })
-                        except (ValueError, IndexError):
-                            pass
+                        # Umkehrtransformation: Plattform-Pose → Düsenposition
+                        if self.as_toolpath:
+                            x, y, z, a, b, c = self.compute_toolpath_pose(
+                                geo_x, geo_y, geo_z, geo_a, geo_b, geo_c,
+                                self.bed_offset)
+                        else:
+                            # Verwende direkt die Geo-Koordinaten
+                            x, y, z, a, b, c = geo_x, geo_y, geo_z, geo_a, geo_b, geo_c
+                        self.commands.append({
+                            'type': 'move',
+                            'x': x,
+                            'y': y,
+                            'z': z,
+                            'a': a,
+                            'b': b,
+                            'c': c,
+                            'extruder_on': self.extruder_state,
+                        })
+                    except (ValueError, IndexError):
+                        pass
     
     def get_blocks(self) -> List[Dict]:
         """Gruppiert Moves in zusammenhängende Blöcke basierend auf Extruder-Status"""
@@ -259,13 +259,15 @@ class GeoCodeVisualizer:
     
     def create_gif_animation(self, output_file: str, fps: int = GIF_FPS, dpi: int = 80,
                                line_width_print: float = LINE_WIDTH_PRINT,
-                               line_width_travel: float = LINE_WIDTH_TRAVEL):
+                               line_width_travel: float = LINE_WIDTH_TRAVEL,
+                               save_tiff: bool = True):
         """Erstellt eine GIF-Animation mit jedem Block als Frame.
         
         Koordinatenraum hängt vom im Konstruktor gesetzten 'as_toolpath' Flag ab.
 
         :param line_width_print:  Liniendicke beim Drucken, in mm
         :param line_width_travel: Liniendicke bei Leerfahrten, in mm
+        :param save_tiff:         Wenn False, wird keine TIFF-Datei erzeugt.
         """
         coord_label = 'Werkzeugbahn (Düsenposition)' if self.as_toolpath else 'Plattform-Pose'
         
@@ -545,15 +547,18 @@ class GeoCodeVisualizer:
             )
             print(f"✓ GIF gespeichert: {output_file}")
 
-            # Speichere als mehrseitiges TIFF (Bildreihe in einer Datei)
-            tiff_file = output_file.replace('.gif', '.tiff')
-            images[0].save(
-                tiff_file,
-                save_all=True,
-                append_images=images[1:],
-                compression='lzw',
-            )
-            print(f"✓ TIFF gespeichert: {tiff_file}")
+            if save_tiff:
+                # Speichere als mehrseitiges TIFF (Bildreihe in einer Datei)
+                tiff_file = output_file.replace('.gif', '.tiff')
+                images[0].save(
+                    tiff_file,
+                    save_all=True,
+                    append_images=images[1:],
+                    compression='lzw',
+                )
+                print(f"✓ TIFF gespeichert: {tiff_file}")
+            else:
+                print("✓ TIFF-Ausgabe deaktiviert")
             
             # Speichere auch das letzte Bild separat
             if images:
@@ -615,6 +620,7 @@ def run_visualization(geo_file: Path, as_toolpath: bool,
                       fps: int = GIF_FPS, dpi: int = 80,
                       line_width_print: float = LINE_WIDTH_PRINT,
                       line_width_travel: float = LINE_WIDTH_TRAVEL,
+                      save_tiff: bool = SAVE_TIFF,
                       shared_colors: Optional[list] = None):
     """Erstellt GIF + finales PNG für einen Koordinatenraum."""
 
@@ -644,11 +650,15 @@ def run_visualization(geo_file: Path, as_toolpath: bool,
     print(f"\nErstelle GIF-Animation ({mode_label})...\n")
     visualizer.create_gif_animation(str(output_gif), fps=fps, dpi=dpi,
                                     line_width_print=line_width_print,
-                                    line_width_travel=line_width_travel)
+                                    line_width_travel=line_width_travel,
+                                    save_tiff=save_tiff)
 
     print(f"  → Ordner: {out_dir}")
     print(f"  → GIF:   {output_gif.name}")
-    print(f"  → TIFF:  {output_gif.stem}.tiff")
+    if save_tiff:
+        print(f"  → TIFF:  {output_gif.stem}.tiff")
+    else:
+        print(f"  → TIFF:  deaktiviert")
     print(f"  → PNG:   {output_gif.stem}_final.png")
 
 

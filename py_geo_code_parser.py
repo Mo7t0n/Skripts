@@ -10,8 +10,8 @@ Düse beim Rotieren denselben Punkt berührt.
 """
 
 # Ein-/Ausgabe
-INPUT_PATH = 'output_trajektorie/Kegel_v6_5x1.txt'
-OUTPUT_PATH = 'output_geo_code/Kegel_v6_5x1_pl.geo'
+INPUT_PATH = 'output_trajektorie/Kegel_v6_5x05.txt'
+OUTPUT_PATH = 'output_geo_code/Kegel_v6_5x05.geo'
 
 # Geschwindigkeitskonstante (mm/min)
 SPEED_CONSTANT = 4.2 * 60  # 8.4 mm/s -> 504 mm/min
@@ -22,19 +22,22 @@ MAX_ROT_Y = 20.0
 MAX_ROT_Z = 15.0
 
 # Offset des Rotationszentrums
-BED_OFFSET_X = 0.45643577 # -0.19494689
-BED_OFFSET_Y = 1.58638469 # 0.40624396
-BED_OFFSET_Z = -189.01789573 # -186.25046989
+BED_OFFSET_X = 0.45643577
+BED_OFFSET_Y = 1.58638469 
+BED_OFFSET_Z = -160.01789573 
 
 # Offset zur Extruder-Position für Testzwecke
 TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
-TEST_OFFSET_Z = -5 # -20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
+TEST_OFFSET_Z = 0 # 20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
 
 # Extruder-Temperatur und temperaturabhängiger Z-Offset
 # Offset steigt linear von 0 mm bei 0 °C an: offset_z = TEMP_OFFSET_Z_SLOPE * EXTRUDER_TEMPERATURE
 EXTRUDER_TEMPERATURE = 200  # Extruder-Temperatur in °C
 TEMP_OFFSET_Z_SLOPE = 0.66 / 400  # Steigung: mm pro °C (Kalibrierwert vom Benutzer eintragen)
+
+# Deaktiviert die Neigung
+DISABLE_ROTATION = False
 
 def strip_comments(line):
     return line.split(';')[0].strip()
@@ -78,47 +81,35 @@ def parse_gcode_line(line):
     return components
 
 
-def compute_platform_pose(x, y, z, a, b, c, bed_offset_xyz=(-3.13421237, -9.74438965, -178.13481531), test_offset_xyz=(10.0, -1.5, 55.0)):
+def compute_platform_pose(x, y, z, a, b, c):
     """
     Berechnet Plattform-Pose (Inverse der Düsenpose).
     :param x,y,z: Position (mm)
     :param a,b,c: Rotationen (°)
-    :param bed_offset_xyz: Abstand Rotationszentrum–Düse (mm)
-    :param test_offset_xyz: Offset für Extruder-Position (mm)
-    :return: (px,py,pz,pa,pb,pc)
+    :return: (px, py, pz, pa, pb, pc) Plattformposition (mm) und -rotation (°)
     """
-    bed_offset = np.array(bed_offset_xyz)
-    test_offset = np.array(test_offset_xyz)
+    bed_rot_offset = np.array([BED_OFFSET_X, BED_OFFSET_Y, BED_OFFSET_Z])
+    test_offset = np.array([TEST_OFFSET_X, TEST_OFFSET_Y, TEST_OFFSET_Z])
 
-    tool_tip = np.array([x, y, z])
+    dx_buildspace = np.array([x, y, z]) + test_offset
 
-    R = Rotation.from_euler('ZYX', [c, b, a], degrees=True)
+    R_B = Rotation.from_euler('ZYX', [c, b, a], degrees=True)
+    R_H = R_B.inv()
 
-    rot_center = tool_tip - bed_offset
-    rotated_offset = R.apply(bed_offset)
-    new_nozzle_pos = rot_center + rotated_offset - test_offset
+    rot_hexapod = R_H.as_euler('xyz', degrees=True)
 
-    T_nozzle = np.eye(4)
-    T_nozzle[:3, :3] = R.as_matrix()
-    T_nozzle[:3, 3] = new_nozzle_pos
+    dx_hexapod = R_H.apply(bed_rot_offset) - R_H.apply(dx_buildspace) - bed_rot_offset
 
-    T_plattform = np.linalg.inv(T_nozzle)
+    temp_offset_z = calculate_temp_offset_z(EXTRUDER_TEMPERATURE)
 
-    pos = T_plattform[:3, 3]
-    rot = R.from_matrix(T_plattform[:3, :3])
-    euler = rot.as_euler('ZYX', degrees=True)
+    return dx_hexapod[0], dx_hexapod[1], dx_hexapod[2] - temp_offset_z, rot_hexapod[0], rot_hexapod[1], rot_hexapod[2]
 
-    return pos[0], pos[1], pos[2], euler[2], euler[1], euler[0]
-
-def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset=(-3.13421237, -9.74438965, -178.13481531), test_offset=(10.0, -1.5, 55.0), extruder_temp=EXTRUDER_TEMPERATURE):
+def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z):
     """
     Wandelt Eingabe-Zeilen in Bewegungsbefehle um.
     Berechnet Plattformpositionen und begrenzt Rotationen.
     """
-    # Berechne temperaturabhängigen Z-Offset und kombiniere mit TEST_OFFSET_Z
-    temp_offset_z = calculate_temp_offset_z(extruder_temp)
-    adjusted_test_offset = (test_offset[0], test_offset[1], test_offset[2] - temp_offset_z)
-    
+        
     custom_code = ['EXTRUDER_OFF','LA 0.0 0.0 -300.0 0.0 0.0 0.0']  # Startpose
     custom_ende_code = ''
     last_speed = None
@@ -165,17 +156,22 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
             curr_x = components.get('X', curr_x)
             curr_y = components.get('Y', curr_y)
             curr_z = components.get('Z', curr_z)
-            curr_a = 0 #components.get('A', curr_a)
-            curr_b = 0 #components.get('B', curr_b)
-            curr_c = 0 #components.get('C', curr_c)
 
-            rot_x = np.clip(curr_a, -max_rot_x, max_rot_x)
-            rot_y = np.clip(curr_b, -max_rot_y, max_rot_y)
-            rot_z = np.clip(curr_c, -max_rot_z, max_rot_z)
+            if DISABLE_ROTATION:
+                curr_a = 0.0
+                curr_b = 0.0
+                curr_c = 0.0
+            else:
+                curr_a = components.get('A', curr_a)
+                curr_b = components.get('B', curr_b)
+                curr_c = components.get('C', curr_c)
+
+            rot_a = np.clip(curr_a, -max_rot_x, max_rot_x)
+            rot_b = np.clip(curr_b, -max_rot_y, max_rot_y)
+            rot_c = np.clip(curr_c, -max_rot_z, max_rot_z)
 
             px, py, pz, pa, pb, pc = compute_platform_pose(
-                curr_x, curr_y, curr_z, rot_x, rot_y, rot_z, bed_offset, adjusted_test_offset
-            )
+                curr_x, curr_y, curr_z, rot_a, rot_b, rot_c)
 
             custom_code.append(f'LA {px:.5f} {py:.5f} {pz:.5f} {pa:.5f} {pb:.5f} {pc:.5f}')
 
@@ -188,17 +184,17 @@ def convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_off
     return custom_code, total_distance
 
 
-def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset, extruder_temp=EXTRUDER_TEMPERATURE, speed_constant=SPEED_CONSTANT):
+def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z):
     with open(input_filename, 'r') as infile:
         gcode_lines = infile.readlines()
 
-    custom_code, total_distance = convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z, bed_offset, test_offset, extruder_temp)
+    custom_code, total_distance = convert_to_custom_code(gcode_lines, max_rot_x, max_rot_y, max_rot_z)
 
-    total_time_min = total_distance / speed_constant
+    total_time_min = total_distance / SPEED_CONSTANT
     hours = int(total_time_min // 60)
     minutes = total_time_min % 60
     print(f'Gesamtstrecke : {total_distance:.2f} mm')
-    print(f'Geschwindigkeit: {speed_constant:.1f} mm/min')
+    print(f'Geschwindigkeit: {SPEED_CONSTANT:.1f} mm/min')
     print(f'Gesamtzeit    : {hours} h {minutes:.1f} min')
 
     with open(output_filename, 'w') as outfile:
@@ -206,16 +202,10 @@ def main(input_filename, output_filename, max_rot_x, max_rot_y, max_rot_z, bed_o
 
 
 if __name__ == '__main__':
-    BED_OFFSET = (BED_OFFSET_X, BED_OFFSET_Y, BED_OFFSET_Z)
-    TEST_OFFSET = (TEST_OFFSET_X, TEST_OFFSET_Y, TEST_OFFSET_Z)
-
     main(
         INPUT_PATH,
         OUTPUT_PATH,
         MAX_ROT_X,
         MAX_ROT_Y,
-        MAX_ROT_Z,
-        BED_OFFSET,
-        TEST_OFFSET,
-        EXTRUDER_TEMPERATURE
+        MAX_ROT_Z
     )

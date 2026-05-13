@@ -29,7 +29,7 @@ BED_OFFSET_Z = -160.01789573
 # Offset zur Extruder-Position für Testzwecke
 TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
-TEST_OFFSET_Z = 8 # 20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
+TEST_OFFSET_Z = 3 # 20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
 
 # Extruder-Temperatur und temperaturabhängiger Z-Offset
 # Offset steigt linear von 0 mm bei 0 °C an: offset_z = TEMP_OFFSET_Z_SLOPE * EXTRUDER_TEMPERATURE

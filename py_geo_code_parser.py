@@ -10,11 +10,11 @@ Düse beim Rotieren denselben Punkt berührt.
 """
 
 # Ein-/Ausgabe
-INPUT_PATH = 'output_trajektorie/Kegel_v6_5x1.txt'
-OUTPUT_PATH = 'output_geo_code/Kegel_v6_5x1.geo'
+INPUT_PATH = 'output_trajektorie/Kegel_v6_5x2.txt'
+OUTPUT_PATH = 'output_geo_code/Kegel_v6_5x2.geo'
 
 # Geschwindigkeitskonstante (mm/min)
-SPEED_CONSTANT = 4.2 * 60  # 8.4 mm/s -> 504 mm/min
+SPEED_CONSTANT = 8.7 * 60
 
 # Maximale erlaubte Rotationen
 MAX_ROT_X = 20.0
@@ -29,7 +29,7 @@ BED_OFFSET_Z = -160.01789573
 # Offset zur Extruder-Position für Testzwecke
 TEST_OFFSET_X = 0
 TEST_OFFSET_Y = 0
-TEST_OFFSET_Z = 3 # 20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
+TEST_OFFSET_Z = 4 # 20 für Testzwecke, damit die Düse nicht auf dem Bett schleift
 
 # Extruder-Temperatur und temperaturabhängiger Z-Offset
 # Offset steigt linear von 0 mm bei 0 °C an: offset_z = TEMP_OFFSET_Z_SLOPE * EXTRUDER_TEMPERATURE

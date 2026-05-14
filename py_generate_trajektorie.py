@@ -28,7 +28,7 @@ ARROW_LENGTH_RATIO = 0.25
 
 # Export
 EXPORT_TRAJEKTORIE            = True
-OUTPUT_TRAJEKTORIE_PATH       = "output_trajektorie/Kegel_v6_5x2.txt"
+OUTPUT_TRAJEKTORIE_PATH       = "output_trajektorie/Kegel_v6_5x1_finer.txt"
 WRITE_A_B_C             = True           # A/B/C schreiben (als Euler in Grad)
 DECIMALS_XYZ            = 5              # Nachkommastellen für X/Y/Z
 DECIMALS_ABC            = 6              # Nachkommastellen für A/B/C

@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Ein-/Ausgabe
-INPUT_GEO_FILE = "output_geo_code/Kegel_v6_5x1_pl.geo"   # Pfad zur .geo Datei (relativ zum Skript)
+INPUT_GEO_FILE = "output_geo_code/Kegel_v6_5x1_fine.geo"   # Pfad zur .geo Datei (relativ zum Skript)
 
 # Darstellungsmodus
 # 'platform'  → Plattform-Pose (Originalkoordinaten aus dem Geo-File)

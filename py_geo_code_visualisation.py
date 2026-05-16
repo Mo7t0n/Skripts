@@ -7,6 +7,10 @@ from scipy.spatial.transform import Rotation
 import warnings
 warnings.filterwarnings('ignore')
 
+# Globale Schriftart für alle Matplotlib-Texte
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['font.sans-serif'] = ['Open Sans', 'DejaVu Sans', 'Arial', 'sans-serif']
+
 # Ein-/Ausgabe
 INPUT_GEO_FILE = "output_geo_code/Kegel_v6_5x1_fine.geo"   # Pfad zur .geo Datei (relativ zum Skript)
 
@@ -14,11 +18,11 @@ INPUT_GEO_FILE = "output_geo_code/Kegel_v6_5x1_fine.geo"   # Pfad zur .geo Datei
 # 'platform'  → Plattform-Pose (Originalkoordinaten aus dem Geo-File)
 # 'toolpath'  → Werkzeugbahn / Düsenposition (Umkehrtransformation)
 # 'both'      → beide Modi nacheinander
-VISUALIZE_MODE = 'both'
+VISUALIZE_MODE = 'toolpath'
 
 # Kamera der 3D-Ansicht (Grad)
-CAMERA_ELEV_DEG = 20
-CAMERA_AZIM_DEG = 135
+CAMERA_ELEV_DEG = 15
+CAMERA_AZIM_DEG = 25
 
 # Beschleunigung: True = schnelle Darstellung via vorab erzeugte Linien-Artists.
 # Bei Problemen mit der Darstellung auf False setzen (Kompatibilitätsmodus).
@@ -34,10 +38,16 @@ DEFAULT_TEST_OFFSET = (0.0, 0.0, 0.0)
 
 # Liniendicke (in mm)
 LINE_WIDTH_PRINT  = 1.0   # Liniendicke beim Drucken, in mm
-LINE_WIDTH_TRAVEL = 0.05  # Liniendicke bei Leerfahrten, in mm
+LINE_WIDTH_TRAVEL = 0.2  # Liniendicke bei Leerfahrten, in mm
+
+# Schriftgrößen für Beschriftungen
+LABEL_FONT_SIZE = 16
+TITLE_FONT_SIZE = 18
+SUPTITLE_FONT_SIZE = 22
+TICK_FONT_SIZE = 14
 
 # Extrueder-Ausrichtungs-Pfeile
-SHOW_EXTRUDER_ORIENTATION_ARROWS = True
+SHOW_EXTRUDER_ORIENTATION_ARROWS = False
 ORIENTATION_ARROW_EVERY = 10   # jeden n-ten Punkt als Pfeil zeichnen
 ORIENTATION_ARROW_SCALE = 0.05 # Pfeillänge relativ zur Szenengröße
 
@@ -287,6 +297,10 @@ class GeoCodeVisualizer:
             moves = block['moves']
             coords = np.array([[m['x'], m['y'], m['z']] for m in moves], dtype=float)
 
+            # Entferne in der Visualisierung den ersten angefahrenen Punkt des Gesamtpfads.
+            if seq_idx == 0 and coords.shape[0] > 1:
+                coords = coords[1:]
+
             if block['extruder_on']:
                 color = shared_colors[print_idx]
                 print_idx += 1
@@ -366,8 +380,8 @@ class GeoCodeVisualizer:
 
         # Einmalige Figure; 3D-Achse wird pro Frame neu gezeichnet (Painter's Sort),
         # 2D-Achsen bleiben inkrementell mit zorder.
-        fig = plt.figure(figsize=(24, 18), dpi=dpi)
-        gs = fig.add_gridspec(nrows=3, ncols=2, width_ratios=[2, 1], height_ratios=[1, 1, 1], hspace=0.30, wspace=0.25)
+        fig = plt.figure(figsize=(20, 16), dpi=dpi)
+        gs = fig.add_gridspec(nrows=3, ncols=2, width_ratios=[3, 1], height_ratios=[1, 1, 1], hspace=0.3, wspace=0.0)
 
         # 3D Subplot nimmt ganze linke Spalte ein
         ax3d = fig.add_subplot(gs[:, 0], projection='3d')
@@ -381,46 +395,52 @@ class GeoCodeVisualizer:
 
         def _setup_ax3d(ax, title=''):
             """(Neu-)Einrichten der 3D-Achse nach cla()."""
-            ax.set_xlabel('X (mm)')
-            ax.set_ylabel('Y (mm)')
-            ax.set_zlabel('Z (mm)')
+            ax.set_xlabel('X (mm)', fontsize=LABEL_FONT_SIZE)
+            ax.set_ylabel('Y (mm)', fontsize=LABEL_FONT_SIZE)
+            ax.set_zlabel('Z (mm)', fontsize=LABEL_FONT_SIZE)
             ax.set_xlim(x3_min, x3_max)
             ax.set_ylim(y3_min, y3_max)
             ax.set_zlim(z3_min, z3_max)
             ax.set_box_aspect((1.0, 1.0, 1.0))
             ax.view_init(elev=ELEV, azim=AZIM)
+            ax.tick_params(axis='both', labelsize=TICK_FONT_SIZE)
             if title:
-                ax.set_title(title)
+                ax.set_title(title, fontsize=TITLE_FONT_SIZE)
 
         # Statisches Axis-Setup
         _setup_ax3d(ax3d)
 
         def _set_equal_2d_limits(ax, x_lo, x_hi, y_lo, y_hi):
-            """Setzt für eine 2D-Achse gleiche Einheiten per erweiterten Gleichbereich."""
+            """Setzt für eine 2D-Achse gleiche Einheiten und gleich große Achsrahmen."""
             x_center = 0.5 * (x_lo + x_hi)
             y_center = 0.5 * (y_lo + y_hi)
-            half_span = 0.5 * max(x_hi - x_lo, y_hi - y_lo, 1e-9)
-            ax.set_xlim(x_center - half_span, x_center + half_span)
-            ax.set_ylim(y_center - half_span, y_center + half_span)
+            x_span = max(x_hi - x_lo, 1e-9)
+            y_span = max(y_hi - y_lo, 1e-9)
+            ax.set_xlim(x_center - x_span * 0.5, x_center + x_span * 0.5)
+            ax.set_ylim(y_center - y_span * 0.5, y_center + y_span * 0.5)
             ax.set_aspect('equal', adjustable='box')
+            ax.set_box_aspect(1)
 
-        ax_xy.set_xlabel('X (mm)')
-        ax_xy.set_ylabel('Y (mm)')
+        ax_xy.set_xlabel('X (mm)', fontsize=LABEL_FONT_SIZE)
+        ax_xy.set_ylabel('Y (mm)', fontsize=LABEL_FONT_SIZE)
         _set_equal_2d_limits(ax_xy, x_min, x_max, y_min, y_max)
-        ax_xy.set_title('Draufsicht (X-Y)')
+        ax_xy.set_title('Draufsicht (X-Y)', fontsize=TITLE_FONT_SIZE)
+        ax_xy.tick_params(axis='both', labelsize=TICK_FONT_SIZE)
         ax_xy.grid(True, alpha=0.3)
 
-        ax_xz.set_xlabel('X (mm)')
-        ax_xz.set_ylabel('Z (mm)')
+        ax_xz.set_xlabel('X (mm)', fontsize=LABEL_FONT_SIZE)
+        ax_xz.set_ylabel('Z (mm)', fontsize=LABEL_FONT_SIZE)
         _set_equal_2d_limits(ax_xz, x_min, x_max, z_min, z_max)
-        ax_xz.set_title('Seitenansicht (X-Z)')
+        ax_xz.set_title('Seitenansicht (X-Z)', fontsize=TITLE_FONT_SIZE)
+        ax_xz.tick_params(axis='both', labelsize=TICK_FONT_SIZE)
         ax_xz.grid(True, alpha=0.3)
         ax_xz.invert_xaxis()
 
-        ax_yz.set_xlabel('Y (mm)')
-        ax_yz.set_ylabel('Z (mm)')
+        ax_yz.set_xlabel('Y (mm)', fontsize=LABEL_FONT_SIZE)
+        ax_yz.set_ylabel('Z (mm)', fontsize=LABEL_FONT_SIZE)
         _set_equal_2d_limits(ax_yz, y_min, y_max, z_min, z_max)
-        ax_yz.set_title('Seitenansicht (Y-Z)')
+        ax_yz.set_title('Seitenansicht (Y-Z)', fontsize=TITLE_FONT_SIZE)
+        ax_yz.tick_params(axis='both', labelsize=TICK_FONT_SIZE)
         ax_yz.grid(True, alpha=0.3)
         ax_yz.invert_xaxis()
 
@@ -485,7 +505,7 @@ class GeoCodeVisualizer:
                         pb['arrow_3d'].set_visible(True)
                 last_visible_seq = block_idx
 
-                ax3d.set_title("3D-Ansicht")
+                ax3d.set_title("3D-Ansicht", fontsize=TITLE_FONT_SIZE)
             else:
                 coords = prep['coords']
                 color = prep['color']
@@ -524,7 +544,7 @@ class GeoCodeVisualizer:
                            zorder=prep['zorder_yz'])
             fig.suptitle(
                 f'Geo-Code Animation {coord_label} – Block {block_idx_text} von {len(prepared_blocks)}',
-                fontsize=14, fontweight='bold'
+                fontsize=SUPTITLE_FONT_SIZE, fontweight='bold'
             )
 
             fig.canvas.draw()
